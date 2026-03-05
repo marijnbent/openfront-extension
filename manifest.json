@@ -1,0 +1,44 @@
+{
+  "manifest_version": 3,
+  "name": "OpenFront Enhanced",
+  "version": "0.1.0",
+  "description": "Red markers on nations during spawn selection, visible at any zoom level.",
+  "permissions": [],
+  "host_permissions": ["*://openfront.io/*", "*://www.openfront.io/*"],
+  "content_scripts": [
+    {
+      "matches": ["*://openfront.io/*", "*://www.openfront.io/*"],
+      "js": [
+        "src/pagehook/namespace.js",
+        "src/pagehook/constants.js",
+        "src/pagehook/utils.js",
+        "src/pagehook/keybinds.js",
+        "src/pagehook/settings-ui.js",
+        "src/pagehook/shortcut-panel.js",
+        "src/pagehook/chat-search.js",
+        "src/pagehook/emoji-search.js",
+        "src/pagehook/game-hooks.js",
+        "src/pagehook/neighbor-watch.js",
+        "src/pagehook/shortcuts.js",
+        "src/page-hook.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": ["*://openfront.io/*", "*://www.openfront.io/*"],
+      "js": ["src/content.js"],
+      "css": ["src/content.css"],
+      "run_at": "document_start"
+    }
+  ],
+  "action": {
+    "default_popup": "popup/index.html",
+    "default_title": "OpenFront Enhanced"
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}

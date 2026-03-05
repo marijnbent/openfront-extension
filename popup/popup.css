@@ -1,0 +1,39 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  background: #0f1117;
+  color: #e2e4e9;
+  width: 260px;
+}
+
+.popup {
+  padding: 16px;
+}
+
+h1 {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.accent {
+  color: #60a5fa;
+}
+
+p {
+  font-size: 12px;
+  color: #9ca3af;
+  margin-top: 6px;
+  line-height: 1.4;
+}
+
+.version {
+  display: block;
+  font-size: 10px;
+  color: #4b5563;
+  margin-top: 12px;
+}

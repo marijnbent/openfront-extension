@@ -1,0 +1,9 @@
+/*
+ * OpenFront Enhanced — Content Styles
+ *
+ * Spawn phase: red dots on nations.
+ */
+
+#ofe-dot-container div {
+  will-change: left, top, opacity;
+}
