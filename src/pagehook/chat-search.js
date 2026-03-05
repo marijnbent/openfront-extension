@@ -33,6 +33,8 @@
     } catch (_) {}
 
     const players = [];
+    let leaderId = null;
+    let leaderTiles = -Infinity;
     for (const player of game.players()) {
       if (!player || typeof player.id !== "function") continue;
       const id = player.id();
@@ -40,16 +42,38 @@
       if (typeof player.isAlive === "function" && !player.isAlive()) continue;
 
       const name = String(fn.getPlayerDisplayName(player) || "").trim() || `#${id}`;
+      let tilesOwned = null;
+      try {
+        if (typeof player.numTilesOwned === "function") {
+          const value = Number(player.numTilesOwned());
+          if (Number.isFinite(value)) tilesOwned = value;
+        }
+      } catch (_) {}
+
+      if (tilesOwned != null && tilesOwned > leaderTiles) {
+        leaderTiles = tilesOwned;
+        leaderId = id;
+      }
+
       players.push({
         id,
         name,
         player,
-        isDefault: recipientId != null && id === recipientId,
+        tilesOwned,
+        isDefault: false,
       });
+    }
+
+    const defaultId = leaderId != null ? leaderId : recipientId;
+    for (const player of players) {
+      player.isDefault = defaultId != null && player.id === defaultId;
     }
 
     players.sort((a, b) => {
       if (a.isDefault !== b.isDefault) return a.isDefault ? -1 : 1;
+      if (a.tilesOwned != null && b.tilesOwned != null && a.tilesOwned !== b.tilesOwned) {
+        return b.tilesOwned - a.tilesOwned;
+      }
       return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
     });
 
@@ -65,13 +89,10 @@
       .filter((entry) => fn.matchesAllTokens(entry.name, tokens))
       .slice(0, 8);
 
-    if (!s.selectedPlayer && s.playerMatches.length > 0) {
-      s.selectedPlayer = s.playerMatches[0].player;
-    }
-
     s.playerList.textContent = "";
 
     if (s.playerMatches.length === 0) {
+      s.playerSelectedIndex = -1;
       const empty = document.createElement("div");
       empty.textContent = "No player matches";
       empty.style.cssText = "padding:6px 8px;color:#d1d5db;font-size:12px;";
@@ -79,22 +100,37 @@
       return;
     }
 
-    const selectedId =
+    let selectedId =
       s.selectedPlayer && typeof s.selectedPlayer.id === "function"
         ? s.selectedPlayer.id()
         : null;
 
-    for (const match of s.playerMatches) {
+    let selectedIndex =
+      selectedId != null ? s.playerMatches.findIndex((match) => match.id === selectedId) : -1;
+    if (selectedIndex < 0 && s.playerMatches.length > 0) {
+      selectedIndex = 0;
+      s.selectedPlayer = s.playerMatches[0].player;
+      selectedId =
+        s.selectedPlayer && typeof s.selectedPlayer.id === "function"
+          ? s.selectedPlayer.id()
+          : null;
+    }
+    s.playerSelectedIndex = selectedIndex;
+
+    for (let matchIndex = 0; matchIndex < s.playerMatches.length; matchIndex++) {
+      const match = s.playerMatches[matchIndex];
       const button = document.createElement("button");
       button.type = "button";
       button.textContent = match.name;
       const isSelected = selectedId != null && selectedId === match.id;
+      button.dataset.playerIndex = String(matchIndex);
       button.style.cssText =
         "display:block;width:100%;text-align:left;border:0;border-radius:8px;" +
         "padding:6px 8px;color:#fff;cursor:pointer;background:" +
         (isSelected ? "#1f2937" : "#0b1220");
       button.addEventListener("click", () => {
         s.selectedPlayer = match.player;
+        s.playerSelectedIndex = matchIndex;
         renderChatPlayerResults();
       });
       s.playerList.appendChild(button);
@@ -169,6 +205,7 @@
       if (match.requiresPlayer && typeof chatModal.selectPlayer === "function") {
         let target = s.selectedPlayer;
         if (!target && s.playerMatches.length > 0) target = s.playerMatches[0].player;
+        if (!target && s.players.length > 0) target = s.players[0].player;
         if (!target && recipient) target = recipient;
         if (target) {
           try {
@@ -194,6 +231,73 @@
         }
       }, 0);
     } catch (_) {}
+  }
+
+  function updatePlayerStepVisibility() {
+    const s = state.chatSearchState;
+    if (!s) return;
+    if (s.quickSection) {
+      s.quickSection.style.display = s.isPlayerStepActive ? "none" : "block";
+    }
+    if (!s.playerSection) return;
+    s.playerSection.style.display = s.isPlayerStepActive ? "block" : "none";
+  }
+
+  function resetPlayerSelectionStep() {
+    const s = state.chatSearchState;
+    if (!s) return;
+    s.pendingPhraseMatch = null;
+    s.isPlayerStepActive = false;
+    updatePlayerStepVisibility();
+  }
+
+  function beginPlayerSelectionStep(match) {
+    const s = state.chatSearchState;
+    if (!s || !match || !match.requiresPlayer) return;
+
+    s.pendingPhraseMatch = match;
+    s.isPlayerStepActive = true;
+
+    if (!s.selectedPlayer && s.playerMatches.length > 0) {
+      s.selectedPlayer = s.playerMatches[0].player;
+    }
+    if (!s.selectedPlayer && s.players.length > 0) {
+      s.selectedPlayer = s.players[0].player;
+    }
+
+    s.playerInput.value = "";
+    updatePlayerStepVisibility();
+    renderChatPlayerResults();
+
+    setTimeout(() => {
+      if (!state.chatSearchState || state.chatSearchState !== s) return;
+      if (typeof s.playerInput.focus === "function") s.playerInput.focus();
+      if (typeof s.playerInput.select === "function") s.playerInput.select();
+    }, 0);
+  }
+
+  function movePlayerSelection(delta) {
+    const s = state.chatSearchState;
+    if (!s || !s.isPlayerStepActive || !s.playerMatches.length) return;
+
+    let index =
+      typeof s.playerSelectedIndex === "number" ? s.playerSelectedIndex : -1;
+    if (index < 0) index = 0;
+
+    const nextIndex = fn.clamp(index + delta, 0, s.playerMatches.length - 1);
+    const next = s.playerMatches[nextIndex];
+    if (!next) return;
+
+    s.playerSelectedIndex = nextIndex;
+    s.selectedPlayer = next.player;
+    renderChatPlayerResults();
+
+    const button = s.playerList.querySelector(
+      `button[data-player-index="${nextIndex}"]`,
+    );
+    if (button && typeof button.scrollIntoView === "function") {
+      button.scrollIntoView({ block: "nearest" });
+    }
   }
 
   function renderChatSearchResults() {
@@ -235,6 +339,11 @@
         (s.selected === i ? "#374151" : "#111827");
       button.addEventListener("click", () => {
         s.selected = i;
+        if (match.requiresPlayer) {
+          beginPlayerSelectionStep(match);
+          return;
+        }
+        resetPlayerSelectionStep();
         applyQuickChatMatch(match, false);
       });
       s.list.appendChild(button);
@@ -271,6 +380,10 @@
       "margin-top:8px;display:flex;flex-direction:column;gap:6px;" +
       "max-height:220px;overflow:auto;";
 
+    const quickSection = document.createElement("div");
+    quickSection.appendChild(input);
+    quickSection.appendChild(list);
+
     const playerTitle = document.createElement("div");
     playerTitle.textContent = "Target player for [P1] phrases";
     playerTitle.style.cssText =
@@ -289,29 +402,37 @@
       "margin-top:8px;display:flex;flex-direction:column;gap:6px;" +
       "max-height:140px;overflow:auto;";
 
+    const playerSection = document.createElement("div");
+    playerSection.style.cssText = "display:none;";
+    playerSection.appendChild(playerTitle);
+    playerSection.appendChild(playerInput);
+    playerSection.appendChild(playerList);
+
     const players = buildChatPlayerIndex(chatModal, sender, recipient);
     const defaultPlayer = players.find((p) => p.isDefault) || players[0] || null;
 
     panel.appendChild(title);
-    panel.appendChild(input);
-    panel.appendChild(list);
-    panel.appendChild(playerTitle);
-    panel.appendChild(playerInput);
-    panel.appendChild(playerList);
+    panel.appendChild(quickSection);
+    panel.appendChild(playerSection);
     document.body.appendChild(panel);
 
     state.chatSearchState = {
       panel,
       input,
       list,
+      quickSection,
       index,
       matches: [],
       selected: 0,
       playerInput,
       playerList,
+      playerSection,
       players,
       playerMatches: [],
+      playerSelectedIndex: -1,
       selectedPlayer: defaultPlayer ? defaultPlayer.player : null,
+      pendingPhraseMatch: null,
+      isPlayerStepActive: false,
       chatModal,
       sender,
       recipient,
@@ -319,6 +440,7 @@
 
     input.addEventListener("input", () => {
       state.chatSearchState.selected = 0;
+      resetPlayerSelectionStep();
       renderChatSearchResults();
     });
 
@@ -348,6 +470,11 @@
         const active = s.matches[s.selected];
         if (active) {
           e.preventDefault();
+          if (active.requiresPlayer) {
+            beginPlayerSelectionStep(active);
+            return;
+          }
+          resetPlayerSelectionStep();
           applyQuickChatMatch(active, true);
         }
         return;
@@ -364,14 +491,26 @@
       const s = state.chatSearchState;
       if (!s) return;
 
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        movePlayerSelection(1);
+        return;
+      }
+
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        movePlayerSelection(-1);
+        return;
+      }
+
       if (e.key === "Enter") {
+        if (!s.pendingPhraseMatch || !s.isPlayerStepActive) return;
         if (!s.selectedPlayer && s.playerMatches[0]) {
           s.selectedPlayer = s.playerMatches[0].player;
         }
-        const active = s.matches[s.selected];
-        if (active) {
+        if (s.pendingPhraseMatch && s.selectedPlayer) {
           e.preventDefault();
-          applyQuickChatMatch(active, true);
+          applyQuickChatMatch(s.pendingPhraseMatch, true);
         }
         return;
       }
@@ -384,6 +523,7 @@
 
     renderChatSearchResults();
     renderChatPlayerResults();
+    updatePlayerStepVisibility();
 
     setTimeout(() => {
       input.focus();
