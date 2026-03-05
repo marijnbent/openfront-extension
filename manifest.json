@@ -16,6 +16,7 @@
         "src/pagehook/settings-ui.js",
         "src/pagehook/shortcut-panel.js",
         "src/pagehook/chat-search.js",
+        "src/pagehook/emoji-priority.js",
         "src/pagehook/emoji-search.js",
         "src/pagehook/game-hooks.js",
         "src/pagehook/neighbor-watch.js",

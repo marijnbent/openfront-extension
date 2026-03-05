@@ -33,13 +33,36 @@
     if (!s) return null;
 
     const tokens = fn.splitTokens(s.input.value);
-    let firstVisible = null;
+    const matches = [];
 
-    for (const button of getEmojiButtons()) {
+    for (const [index, button] of getEmojiButtons().entries()) {
       const emoji = (button.textContent || "").trim();
       const visible = emojiMatchesQuery(emoji, tokens);
       button.style.display = visible ? "" : "none";
-      if (visible && !firstVisible) firstVisible = button;
+      if (!visible) {
+        button.style.order = "";
+        continue;
+      }
+
+      matches.push({ button, emoji, index });
+    }
+
+    let firstVisible = null;
+    if (!tokens.length) {
+      for (const match of matches) {
+        match.button.style.order = "";
+      }
+      firstVisible = matches.length ? matches[0].button : null;
+    } else {
+      const ranked =
+        typeof fn.rankEmojiMatches === "function"
+          ? fn.rankEmojiMatches(matches, tokens)
+          : matches.slice().sort((a, b) => a.index - b.index);
+
+      for (const [rank, match] of ranked.entries()) {
+        match.button.style.order = String(rank);
+      }
+      firstVisible = ranked.length ? ranked[0].button : null;
     }
 
     s.firstVisible = firstVisible;

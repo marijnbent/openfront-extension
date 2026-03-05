@@ -45,6 +45,16 @@
     },
   };
 
+  ns.constants.EMOJI_SEARCH_PRIORITY = {
+    "🏭": 40,
+    "🚂": 34,
+    "❤️": 32,
+    "💔": 28,
+    "🤝": 30,
+    "☢️": 29,
+    "🆘": 27,
+  };
+
   ns.constants.EMOJI_KEYWORDS = {
     "😀": ["grin", "happy", "smile"],
     "😊": ["smile", "blush", "nice"],
@@ -79,7 +89,7 @@
     "🔥": ["fire", "hot", "burn"],
     "💥": ["boom", "explode", "impact"],
     "💀": ["skull", "dead", "rip"],
-    "☢️": ["nuke", "nuclear", "radiation"],
+    "☢️": ["nuke", "nuclear", "nucelar", "radiation"],
     "⚠️": ["warning", "alert", "danger"],
     "↖️": ["northwest", "up", "left"],
     "⬆️": ["up", "north", "top"],
