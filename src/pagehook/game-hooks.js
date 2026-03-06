@@ -137,11 +137,11 @@
     return components;
   }
 
-  function navigateToPosition(x, y) {
+  function navigateToPosition(x, y, instant = false) {
     const buildMenu = document.querySelector("build-menu");
     if (!buildMenu || !buildMenu.transformHandler) return;
     const th = buildMenu.transformHandler;
-    if (typeof th.onGoToPosition === "function") {
+    if (!instant && typeof th.onGoToPosition === "function") {
       // TransformHandler onGoToPosition expects world/tile coordinates.
       th.onGoToPosition({ x, y });
       return;
@@ -273,7 +273,7 @@
 
     state.territoryCycleIndex = (state.territoryCycleIndex + 1) % components.length;
     const target = components[state.territoryCycleIndex];
-    navigateToPosition(target.centroidX, target.centroidY);
+    navigateToPosition(target.centroidX, target.centroidY, true);
     fn.pushBottomRightLog(
       `Territory ${state.territoryCycleIndex + 1}/${components.length}`,
     );
