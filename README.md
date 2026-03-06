@@ -1,5 +1,7 @@
 # OpenFront Enhanced
 
+![Screenshot of spawn phase with nation markers and shortcut panel](screenshot.png)
+
 Chrome extension that adds quality-of-life improvements to [openfront.io](https://openfront.io).
 
 ## Features
