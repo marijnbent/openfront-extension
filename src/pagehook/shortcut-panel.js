@@ -30,7 +30,7 @@
     emojiSearch: "Emoji",
     allianceRequest: "Alliance",
     boatOnePercent: "Boat 1%",
-    territoryCycle: "Cycle",
+    territoryCycle: "Mini Terr",
   };
 
   function keyCodeLabel(code) {

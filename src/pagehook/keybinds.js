@@ -4,9 +4,10 @@
   const ns = window.__OFE;
   if (!ns) return;
 
-  const { constants, fn } = ns;
+  const { state, constants, fn } = ns;
 
   const EXT_KEYBINDS_STORAGE_KEY = "ofe.keybinds";
+  const EXT_SETTINGS_STORAGE_KEY = "ofe.settings";
 
   function gameKeybindActionLabel(action) {
     return action;
@@ -126,6 +127,60 @@
     localStorage.setItem(EXT_KEYBINDS_STORAGE_KEY, JSON.stringify(raw));
   }
 
+  function getDefaultExtensionSettings() {
+    return {
+      spawnEntry: true,
+      gameStart: true,
+      boatLanding: true,
+      boatDestroyed: true,
+      warshipDestroyed: true,
+      neighborSleeping: true,
+      neighborTraitor: true,
+      nukeInbound: true,
+      hydrogenInbound: true,
+      mirvInbound: true,
+    };
+  }
+
+  function primeExtensionSettingsCache() {
+    if (state.extensionSettingsCache) {
+      return state.extensionSettingsCache;
+    }
+    const defaults = getDefaultExtensionSettings();
+    const raw = getExtensionSettingsRaw();
+    state.extensionSettingsCache = { ...defaults };
+
+    for (const key of Object.keys(defaults)) {
+      if (typeof raw[key] === "boolean") {
+        state.extensionSettingsCache[key] = raw[key];
+      }
+    }
+
+    return state.extensionSettingsCache;
+  }
+
+  function getExtensionSettingsRaw() {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(EXT_SETTINGS_STORAGE_KEY) || "{}");
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+      return parsed;
+    } catch (_) {
+      return {};
+    }
+  }
+
+  function getEffectiveExtensionSettings() {
+    return { ...primeExtensionSettingsCache() };
+  }
+
+  function saveExtensionSetting(key, value) {
+    const cached = primeExtensionSettingsCache();
+    cached[key] = value;
+    const raw = getExtensionSettingsRaw();
+    raw[key] = value;
+    localStorage.setItem(EXT_SETTINGS_STORAGE_KEY, JSON.stringify(raw));
+  }
+
   function codeToActionsMap(bindings) {
     const map = {};
     for (const [action, code] of Object.entries(bindings)) {
@@ -192,6 +247,13 @@
   fn.getExtensionBindingsRaw = getExtensionBindingsRaw;
   fn.getEffectiveExtensionBindings = getEffectiveExtensionBindings;
   fn.saveExtensionBinding = saveExtensionBinding;
+  fn.getDefaultExtensionSettings = getDefaultExtensionSettings;
+  fn.getExtensionSettingsRaw = getExtensionSettingsRaw;
+  fn.getEffectiveExtensionSettings = getEffectiveExtensionSettings;
+  fn.saveExtensionSetting = saveExtensionSetting;
+  fn.extensionSoundEnabled = (key) => primeExtensionSettingsCache()[key] !== false;
+  fn.anyExtensionSoundsEnabled = () =>
+    Object.values(primeExtensionSettingsCache()).some((value) => value !== false);
 
   fn.getShortcutDiagnostics = getShortcutDiagnostics;
 

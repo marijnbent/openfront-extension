@@ -4,8 +4,9 @@
   const ns = window.__OFE;
   if (!ns) return;
 
-  const { state, fn } = ns;
+  const { state, constants, fn } = ns;
   const BOAT_OVERRIDE_WINDOW_MS = 1500;
+  let sharedAudioContext = null;
 
   function setGamePhase(newPhase) {
     const oldPhase = state.gamePhase;
@@ -22,37 +23,513 @@
     }
   };
 
-  function playGameStartChime() {
+  function soundEnabled(key) {
+    return fn.extensionSoundEnabled ? fn.extensionSoundEnabled(key) : true;
+  }
+
+  function anySoundsEnabled() {
+    return fn.anyExtensionSoundsEnabled ? fn.anyExtensionSoundsEnabled() : true;
+  }
+
+  function getAudioContext() {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return null;
+    if (!sharedAudioContext || sharedAudioContext.state === "closed") {
+      sharedAudioContext = new Ctx();
+    }
+    if (sharedAudioContext.state === "suspended") {
+      sharedAudioContext.resume().catch(() => {});
+    }
+    return sharedAudioContext;
+  }
+
+  function playTone(options) {
+    const ctx = getAudioContext();
+    if (!ctx) return;
+
+    const {
+      type = "sine",
+      start = 0,
+      duration = 0.2,
+      gain = 0.14,
+      attack = 0.01,
+      release = duration,
+      frequency,
+      sweepTo,
+    } = options;
+
+    const osc = ctx.createOscillator();
+    const amp = ctx.createGain();
+    const at = ctx.currentTime + start;
+    const off = at + duration;
+
+    osc.type = type;
+    osc.frequency.setValueAtTime(frequency, at);
+    if (sweepTo != null) {
+      osc.frequency.exponentialRampToValueAtTime(
+        Math.max(1, sweepTo),
+        off,
+      );
+    }
+
+    amp.gain.setValueAtTime(0.0001, at);
+    amp.gain.exponentialRampToValueAtTime(
+      Math.max(0.0001, gain),
+      at + Math.max(0.005, attack),
+    );
+    amp.gain.exponentialRampToValueAtTime(
+      0.0001,
+      at + Math.max(Math.max(attack, 0.01), release),
+    );
+
+    osc.connect(amp);
+    amp.connect(ctx.destination);
+    osc.start(at);
+    osc.stop(off);
+  }
+
+  function playGameStartChime(force = false) {
+    if (!force && !soundEnabled("gameStart")) return;
     try {
-      const ctx = new AudioContext();
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.frequency.setValueAtTime(587, ctx.currentTime);        // D5
-      osc.frequency.setValueAtTime(880, ctx.currentTime + 0.12); // A5
-      gain.gain.setValueAtTime(0.3, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
-      osc.start(ctx.currentTime);
-      osc.stop(ctx.currentTime + 0.3);
+      // Bright three-note start cue.
+      playTone({ type: "triangle", frequency: 523.25, duration: 0.12, gain: 0.12, release: 0.11 });
+      playTone({ type: "triangle", frequency: 659.25, start: 0.11, duration: 0.14, gain: 0.14, release: 0.13 });
+      playTone({ type: "triangle", frequency: 783.99, start: 0.24, duration: 0.22, gain: 0.17, release: 0.2 });
     } catch (_) {}
   }
 
-  function playSpawnEntryChime() {
+  function playSpawnEntryChime(force = false) {
+    if (!force && !soundEnabled("spawnEntry")) return;
     try {
-      const ctx = new AudioContext();
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.type = "triangle";
-      osc.frequency.setValueAtTime(440, ctx.currentTime);         // A4
-      osc.frequency.setValueAtTime(523.25, ctx.currentTime + 0.1); // C5
-      gain.gain.setValueAtTime(0.18, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.24);
-      osc.start(ctx.currentTime);
-      osc.stop(ctx.currentTime + 0.24);
+      // Small ready cue before the match starts.
+      playTone({ type: "sine", frequency: 392, duration: 0.1, gain: 0.08, release: 0.09 });
+      playTone({ type: "triangle", frequency: 493.88, start: 0.09, duration: 0.16, gain: 0.11, release: 0.14 });
     } catch (_) {}
+  }
+
+  function playBoatLandingChime(force = false) {
+    if (!force && !soundEnabled("boatLanding")) return;
+    try {
+      // Soft harbor bell: one clean ding with a lighter overtone.
+      playTone({ type: "triangle", frequency: 698.46, duration: 0.26, gain: 0.1, attack: 0.008, release: 0.24 });
+      playTone({ type: "sine", frequency: 1046.5, start: 0.04, duration: 0.18, gain: 0.045, release: 0.17 });
+    } catch (_) {}
+  }
+
+  function playBoatDestroyedChime(force = false) {
+    if (!force && !soundEnabled("boatDestroyed")) return;
+    try {
+      // Short sinking drop.
+      playTone({
+        type: "sine",
+        frequency: 349.23,
+        sweepTo: 174.61,
+        duration: 0.2,
+        gain: 0.09,
+        release: 0.18,
+      });
+      playTone({
+        type: "triangle",
+        frequency: 233.08,
+        sweepTo: 130.81,
+        start: 0.05,
+        duration: 0.16,
+        gain: 0.055,
+        release: 0.14,
+      });
+    } catch (_) {}
+  }
+
+  function playWarshipDestroyedChime(force = false) {
+    if (!force && !soundEnabled("warshipDestroyed")) return;
+    try {
+      // Heavy double horn.
+      playTone({
+        type: "square",
+        frequency: 164.81,
+        sweepTo: 146.83,
+        duration: 0.24,
+        gain: 0.12,
+        attack: 0.015,
+        release: 0.22,
+      });
+      playTone({
+        type: "triangle",
+        frequency: 82.41,
+        sweepTo: 73.42,
+        duration: 0.26,
+        gain: 0.055,
+        attack: 0.02,
+        release: 0.24,
+      });
+      playTone({
+        type: "square",
+        frequency: 146.83,
+        sweepTo: 130.81,
+        start: 0.17,
+        duration: 0.24,
+        gain: 0.1,
+        attack: 0.015,
+        release: 0.22,
+      });
+    } catch (_) {}
+  }
+
+  function playNeighborSleepingAlert(force = false) {
+    if (!force && !soundEnabled("neighborSleeping")) return;
+    try {
+      // Gentle sleepy droop.
+      playTone({
+        type: "sine",
+        frequency: 349.23,
+        sweepTo: 293.66,
+        duration: 0.14,
+        gain: 0.08,
+        release: 0.13,
+      });
+      playTone({
+        type: "triangle",
+        frequency: 261.63,
+        sweepTo: 196,
+        start: 0.12,
+        duration: 0.22,
+        gain: 0.065,
+        release: 0.2,
+      });
+    } catch (_) {}
+  }
+
+  function playNeighborTraitorAlert(force = false) {
+    if (!force && !soundEnabled("neighborTraitor")) return;
+    try {
+      // Sharp hostile flip warning.
+      playTone({
+        type: "square",
+        frequency: 698.46,
+        duration: 0.12,
+        gain: 0.13,
+        release: 0.1,
+      });
+      playTone({
+        type: "square",
+        frequency: 587.33,
+        start: 0.13,
+        duration: 0.12,
+        gain: 0.12,
+        release: 0.1,
+      });
+      playTone({
+        type: "triangle",
+        frequency: 174.61,
+        start: 0.02,
+        duration: 0.28,
+        gain: 0.05,
+        release: 0.24,
+      });
+    } catch (_) {}
+  }
+
+  function playNukeInboundAlarm(force = false) {
+    if (!force && !soundEnabled("nukeInbound")) return;
+    try {
+      // Simple two-step siren.
+      playTone({
+        type: "triangle",
+        frequency: 440,
+        sweepTo: 587.33,
+        duration: 0.18,
+        gain: 0.1,
+        release: 0.16,
+      });
+      playTone({
+        type: "triangle",
+        frequency: 587.33,
+        sweepTo: 440,
+        start: 0.2,
+        duration: 0.18,
+        gain: 0.1,
+        release: 0.16,
+      });
+      playTone({
+        type: "triangle",
+        frequency: 440,
+        sweepTo: 587.33,
+        start: 0.4,
+        duration: 0.18,
+        gain: 0.1,
+        release: 0.16,
+      });
+    } catch (_) {}
+  }
+
+  function playHydrogenInboundAlarm(force = false) {
+    if (!force && !soundEnabled("hydrogenInbound")) return;
+    try {
+      // Slower, deeper bunker-style siren.
+      playTone({
+        type: "sawtooth",
+        frequency: 146.83,
+        sweepTo: 220,
+        duration: 0.28,
+        gain: 0.11,
+        release: 0.26,
+      });
+      playTone({
+        type: "sawtooth",
+        frequency: 220,
+        sweepTo: 146.83,
+        start: 0.3,
+        duration: 0.28,
+        gain: 0.11,
+        release: 0.26,
+      });
+      playTone({
+        type: "triangle",
+        frequency: 73.42,
+        start: 0.02,
+        duration: 0.62,
+        gain: 0.045,
+        release: 0.54,
+      });
+      playTone({
+        type: "sawtooth",
+        frequency: 146.83,
+        sweepTo: 220,
+        start: 0.6,
+        duration: 0.28,
+        gain: 0.11,
+        release: 0.26,
+      });
+    } catch (_) {}
+  }
+
+  function playMirvInboundAlarm(force = false) {
+    if (!force && !soundEnabled("mirvInbound")) return;
+    try {
+      // Highest-urgency alarm: three brutal pulses with a deep body and harsh edge.
+      const pulses = [0, 0.19, 0.38];
+      const bodyFrequencies = [
+        [123.47, 92.5],
+        [116.54, 87.31],
+        [110, 82.41],
+      ];
+      const edgeFrequencies = [
+        [659.25, 622.25],
+        [698.46, 659.25],
+        [739.99, 698.46],
+      ];
+
+      pulses.forEach((start, index) => {
+        const [bodyHigh, bodyLow] = bodyFrequencies[index];
+        const [edgeHigh, edgeLow] = edgeFrequencies[index];
+
+        playTone({
+          type: "sawtooth",
+          frequency: bodyHigh,
+          sweepTo: bodyLow,
+          start,
+          duration: 0.18,
+          gain: 0.105,
+          attack: 0.003,
+          release: 0.16,
+        });
+        playTone({
+          type: "square",
+          frequency: bodyLow * 1.03,
+          sweepTo: Math.max(1, bodyLow * 0.94),
+          start: start + 0.006,
+          duration: 0.17,
+          gain: 0.075,
+          attack: 0.002,
+          release: 0.15,
+        });
+        playTone({
+          type: "triangle",
+          frequency: edgeHigh,
+          sweepTo: edgeLow,
+          start: start + 0.008,
+          duration: 0.08,
+          gain: 0.068,
+          attack: 0.001,
+          release: 0.06,
+        });
+        playTone({
+          type: "square",
+          frequency: edgeHigh * 1.5,
+          sweepTo: edgeLow * 1.35,
+          start: start + 0.012,
+          duration: 0.05,
+          gain: 0.032,
+          attack: 0.001,
+          release: 0.04,
+        });
+      });
+
+      playTone({
+        type: "sine",
+        frequency: 61.74,
+        sweepTo: 51.91,
+        start: 0.01,
+        duration: 0.62,
+        gain: 0.03,
+        attack: 0.01,
+        release: 0.5,
+      });
+    } catch (_) {}
+  }
+
+  function getExtensionSoundPlayer(key) {
+    const previews = {
+      spawnEntry: playSpawnEntryChime,
+      gameStart: playGameStartChime,
+      boatLanding: playBoatLandingChime,
+      boatDestroyed: playBoatDestroyedChime,
+      warshipDestroyed: playWarshipDestroyedChime,
+      neighborSleeping: playNeighborSleepingAlert,
+      neighborTraitor: playNeighborTraitorAlert,
+      nukeInbound: playNukeInboundAlarm,
+      hydrogenInbound: playHydrogenInboundAlarm,
+      mirvInbound: playMirvInboundAlarm,
+    };
+
+    return previews[key] || null;
+  }
+
+  fn.playExtensionSound = (key, force = false) => {
+    const preview = getExtensionSoundPlayer(key);
+    if (!preview) return false;
+
+    try {
+      preview(Boolean(force));
+      return true;
+    } catch (_) {
+      return false;
+    }
+  };
+
+  fn.previewExtensionSound = (key) => fn.playExtensionSound(key, true);
+
+  function maybePlayGameSounds(gu) {
+    if (!gu || gu.tick == null) {
+      return;
+    }
+    if (!state.myClientID) return;
+    if (!anySoundsEnabled()) return;
+
+    const myPID = Number(state.clientIDToPlayerID[state.myClientID]);
+    if (!Number.isFinite(myPID) || myPID <= 0) return;
+
+    const updates = gu.updates;
+    if (!updates) return;
+
+    let ownTransportDeactivations = 0;
+    let ownTransportDestroyedEvents = 0;
+    let ownWarshipDestroyedEvents = 0;
+    let mirvInboundEvents = 0;
+    let nukeInboundEvents = 0;
+    let hydrogenInboundEvents = 0;
+
+    const unitUpdates = Array.isArray(updates[constants.GAME_UPDATE_TYPE.UNIT])
+      ? updates[constants.GAME_UPDATE_TYPE.UNIT]
+      : [];
+    for (const entry of unitUpdates) {
+      if (
+        entry &&
+        entry.unitType === "Transport" &&
+        Number(entry.ownerID) === myPID &&
+        entry.isActive === false
+      ) {
+        ownTransportDeactivations += 1;
+      }
+    }
+
+    const displayUpdates = Array.isArray(updates[constants.GAME_UPDATE_TYPE.DISPLAY_EVENT])
+      ? updates[constants.GAME_UPDATE_TYPE.DISPLAY_EVENT]
+      : [];
+    for (const entry of displayUpdates) {
+      if (
+        !entry ||
+        entry.messageType !== constants.MESSAGE_TYPE.UNIT_DESTROYED ||
+        Number(entry.playerID) !== myPID ||
+        !entry.params
+      ) {
+        continue;
+      }
+
+      if (entry.params.unit === "Transport") {
+        ownTransportDestroyedEvents += 1;
+      } else if (entry.params.unit === "Warship") {
+        ownWarshipDestroyedEvents += 1;
+      }
+    }
+
+    const incomingUpdates = Array.isArray(updates[constants.GAME_UPDATE_TYPE.UNIT_INCOMING])
+      ? updates[constants.GAME_UPDATE_TYPE.UNIT_INCOMING]
+      : [];
+    for (const entry of incomingUpdates) {
+      if (!entry || Number(entry.playerID) !== myPID) continue;
+
+      if (entry.messageType === constants.MESSAGE_TYPE.MIRV_INBOUND) {
+        mirvInboundEvents += 1;
+      } else if (entry.messageType === constants.MESSAGE_TYPE.NUKE_INBOUND) {
+        nukeInboundEvents += 1;
+      } else if (entry.messageType === constants.MESSAGE_TYPE.HYDROGEN_BOMB_INBOUND) {
+        hydrogenInboundEvents += 1;
+      }
+    }
+
+    if (
+      !ownTransportDeactivations &&
+      !ownTransportDestroyedEvents &&
+      !ownWarshipDestroyedEvents &&
+      !mirvInboundEvents &&
+      !nukeInboundEvents &&
+      !hydrogenInboundEvents
+    ) {
+      return;
+    }
+
+    if (
+      ownTransportDestroyedEvents > 0 &&
+      gu.tick !== state.lastBoatDestroyedSoundTick
+    ) {
+      state.lastBoatDestroyedSoundTick = gu.tick;
+      playBoatDestroyedChime();
+    }
+
+    if (
+      ownTransportDeactivations > ownTransportDestroyedEvents &&
+      gu.tick !== state.lastBoatLandingSoundTick
+    ) {
+      state.lastBoatLandingSoundTick = gu.tick;
+      playBoatLandingChime();
+    }
+
+    if (
+      ownWarshipDestroyedEvents > 0 &&
+      gu.tick !== state.lastWarshipDestroyedSoundTick
+    ) {
+      state.lastWarshipDestroyedSoundTick = gu.tick;
+      playWarshipDestroyedChime();
+    }
+
+    if (mirvInboundEvents > 0 && gu.tick !== state.lastMirvInboundSoundTick) {
+      state.lastMirvInboundSoundTick = gu.tick;
+      playMirvInboundAlarm();
+    }
+
+    if (nukeInboundEvents > 0 && gu.tick !== state.lastNukeInboundSoundTick) {
+      state.lastNukeInboundSoundTick = gu.tick;
+      playNukeInboundAlarm();
+    }
+
+    if (
+      hydrogenInboundEvents > 0 &&
+      gu.tick !== state.lastHydrogenInboundSoundTick
+    ) {
+      state.lastHydrogenInboundSoundTick = gu.tick;
+      playHydrogenInboundAlarm();
+    }
   }
 
   function collectOwnedTilesFromLiveGame() {
@@ -218,6 +695,8 @@
       }
     }
 
+    maybePlayGameSounds(gu);
+
     if (state.myClientID && state.clientIDToPlayerID[state.myClientID]) {
       const myPID = state.clientIDToPlayerID[state.myClientID];
       if (state.playerTroopsById[myPID] != null) {
@@ -265,18 +744,26 @@
 
     const { width, height, myTilesSet } = live;
     const components = computeConnectedComponents(width, height, myTilesSet);
+    const smallComponents = components.filter((component) => component.size <= 100);
 
     if (components.length <= 1) {
       fn.pushBottomRightLog("Territory is connected.");
       return;
     }
 
-    state.territoryCycleIndex = (state.territoryCycleIndex + 1) % components.length;
-    const target = components[state.territoryCycleIndex];
+    if (!smallComponents.length) {
+      fn.pushBottomRightLog("No mini territories.");
+      return;
+    }
+
+    state.territoryCycleIndex =
+      (state.territoryCycleIndex + 1) % smallComponents.length;
+    const target = smallComponents[state.territoryCycleIndex];
     navigateToPosition(target.centroidX, target.centroidY, true);
-    fn.pushBottomRightLog(
-      `Territory ${state.territoryCycleIndex + 1}/${components.length}`,
+    console.log(
+      `[OFE] Switched to territory ${state.territoryCycleIndex + 1}/${smallComponents.length} (${target.size} tiles)`,
     );
+    fn.pushBottomRightLog("Mini Territories");
   };
 
   function getLiveMyPlayerTroops() {

@@ -6,8 +6,16 @@
 
   const { state, constants, fn } = ns;
 
-  const ROOT_ID = "ofe-keybind-settings-root";
+  const ROOT_ID = "ofe-extension-settings-root";
+  const TAB_BUTTON_ID = "ofe-extension-settings-tab";
   const SECTION_TITLE = "OpenFront Enhanced";
+  const DEFAULT_HOST_ATTR = "data-ofe-default-settings-host";
+  const PREVIEW_ICON_SVG =
+    "<svg viewBox='0 0 24 24' width='14' height='14' aria-hidden='true'>" +
+    "<path d='M8 6V18L18 12Z' fill='currentColor'/>" +
+    "</svg>";
+  const HOST_TAB_INACTIVE_CLASS =
+    "px-6 py-2 text-xs font-bold transition-all duration-200 rounded-lg uppercase tracking-widest text-white/40 hover:text-white hover:bg-white/5 border border-transparent";
 
   function formatCodeForDisplay(code) {
     if (!code || code === "Null") return "";
@@ -16,17 +24,39 @@
     return code;
   }
 
-  function findKeybindContainer() {
+  function findCurrentSettingsContainer(modal) {
+    const existing = modal.querySelector(`[${DEFAULT_HOST_ATTR}="1"]`);
+    if (existing) return existing;
+
+    const anchor = Array.from(
+      modal.querySelectorAll(
+        "setting-keybind, setting-toggle, setting-slider, setting-select",
+      ),
+    ).find((el) => !el.closest(`#${ROOT_ID}`));
+    if (!anchor || !anchor.parentElement) return null;
+    anchor.parentElement.setAttribute(DEFAULT_HOST_ATTR, "1");
+    return anchor.parentElement;
+  }
+
+  function findTabRow(header) {
+    if (!header) return null;
+    return Array.from(header.querySelectorAll("div")).find(
+      (el) => el.querySelectorAll(":scope > button").length >= 2,
+    ) || null;
+  }
+
+  function findModalContext() {
     const modal = document.querySelector("user-setting");
     if (!modal || !modal.isModalOpen) return null;
-
-    const anchor = modal.querySelector('setting-keybind[action="moveRight"]');
-    if (!anchor) return null;
+    const defaultContent = findCurrentSettingsContainer(modal);
+    if (!defaultContent || !defaultContent.parentElement) return null;
 
     return {
       modal,
-      parent: anchor.parentElement,
-      anchor,
+      scroll: defaultContent.parentElement,
+      defaultContent,
+      header: defaultContent.parentElement.previousElementSibling,
+      tabRow: findTabRow(defaultContent.parentElement.previousElementSibling),
     };
   }
 
@@ -40,6 +70,10 @@
       ? fn.getEffectiveExtensionBindings()
       : {};
     return bindings[action] || constants.EXT_SHORTCUTS[action].defaultCode;
+  }
+
+  function soundSettingEnabled(key) {
+    return fn.extensionSoundEnabled ? fn.extensionSoundEnabled(key) : true;
   }
 
   function showErrorMessage(text) {
@@ -131,7 +165,96 @@
     }
   }
 
-  function buildExtensionSettingRows(root) {
+  function syncToggleValue(el, key) {
+    if (!el) return;
+    el.checked = soundSettingEnabled(key);
+  }
+
+  function onSoundToggleChange(event) {
+    const enabled = event?.currentTarget?.checked;
+    const key = event?.currentTarget?.dataset?.ofeSetting;
+    if (typeof enabled !== "boolean") return;
+    if (!key) return;
+    if (fn.saveExtensionSetting) {
+      fn.saveExtensionSetting(key, enabled);
+    }
+    const root = document.getElementById(ROOT_ID);
+    if (!root) return;
+    const toggle = root.querySelector(`[data-ofe-setting="${key}"]`);
+    if (toggle) syncToggleValue(toggle, key);
+  }
+
+  function onSoundPreviewClick(event) {
+    const key = event?.currentTarget?.dataset?.ofeSoundPreview;
+    if (!key || !fn.previewExtensionSound) return;
+    fn.previewExtensionSound(key);
+  }
+
+  function buildSoundSettingRow(key, meta) {
+    const row = document.createElement("div");
+    row.className =
+      "flex flex-col sm:flex-row sm:items-center sm:justify-between w-full p-4 bg-white/5 border border-white/10 rounded-xl hover:bg-white/10 transition-all gap-3 sm:gap-4";
+
+    const copy = document.createElement("div");
+    copy.className = "flex flex-col flex-1 min-w-0";
+
+    const label = document.createElement("div");
+    label.className = "text-white font-bold text-base block mb-1";
+    label.textContent = meta.label;
+
+    const description = document.createElement("div");
+    description.className = "text-white/50 text-sm leading-snug";
+    description.textContent = meta.desc;
+
+    copy.appendChild(label);
+    copy.appendChild(description);
+
+    const controls = document.createElement("div");
+    controls.className = "flex items-center justify-end gap-3 shrink-0";
+
+    const preview = document.createElement("button");
+    preview.type = "button";
+    preview.dataset.ofeSoundPreview = key;
+    preview.innerHTML = PREVIEW_ICON_SVG;
+    preview.title = `Preview ${meta.label}`;
+    preview.setAttribute("aria-label", `Preview ${meta.label}`);
+    preview.className =
+      "inline-flex h-9 w-9 items-center justify-center text-blue-100 transition-all duration-200 rounded-lg bg-blue-500/15 hover:bg-blue-500/25 border border-blue-400/30";
+    preview.addEventListener("click", onSoundPreviewClick);
+
+    const toggleWrap = document.createElement("label");
+    toggleWrap.className = "relative inline-block w-[52px] h-[28px] shrink-0 cursor-pointer";
+
+    const toggle = document.createElement("input");
+    toggle.type = "checkbox";
+    toggle.id = `ofe-sound-${key}`;
+    toggle.dataset.ofeSetting = key;
+    toggle.className = "opacity-0 w-0 h-0 peer";
+    syncToggleValue(toggle, key);
+    toggle.addEventListener("change", onSoundToggleChange);
+
+    const slider = document.createElement("span");
+    slider.className =
+      "absolute inset-0 bg-black/60 border border-white/10 transition-all duration-300 rounded-full before:absolute before:content-[''] before:h-5 before:w-5 before:left-[3px] before:top-[3px] before:bg-white/40 before:transition-all before:duration-300 before:rounded-full before:shadow-sm hover:before:bg-white/60 peer-checked:bg-blue-600 peer-checked:border-blue-500 peer-checked:before:translate-x-[24px] peer-checked:before:bg-white";
+
+    toggleWrap.appendChild(toggle);
+    toggleWrap.appendChild(slider);
+
+    controls.appendChild(preview);
+    controls.appendChild(toggleWrap);
+    row.appendChild(copy);
+    row.appendChild(controls);
+
+    return row;
+  }
+
+  function buildExtensionKeybindRows(root) {
+    const keybindHeading = document.createElement("h2");
+    keybindHeading.textContent = "Extension Keybinds";
+    keybindHeading.className =
+      "text-blue-200 text-xl font-bold mt-8 mb-3 border-b border-white/10 pb-2";
+    root.appendChild(keybindHeading);
+
     for (const [action, meta] of Object.entries(constants.EXT_SHORTCUTS)) {
       const row = document.createElement("setting-keybind");
       row.action = `ofe.${action}`;
@@ -146,41 +269,142 @@
     }
   }
 
-  function ensureSettingsSection() {
-    const ctx = findKeybindContainer();
-    if (!ctx || !ctx.parent) return;
+  function buildExtensionTabContent(root) {
+    const heading = document.createElement("h2");
+    heading.textContent = SECTION_TITLE;
+    heading.className =
+      "text-blue-200 text-xl font-bold mt-4 mb-3 border-b border-white/10 pb-2";
 
+    const helper = document.createElement("p");
+    helper.className = "text-white/60 text-xs mb-3";
+    helper.textContent =
+      "Each sound has its own toggle and preview icon here. Extension keybinds are listed at the bottom of this tab.";
+
+    const soundHeading = document.createElement("h2");
+    soundHeading.textContent = "Extension Sounds";
+    soundHeading.className =
+      "text-blue-200 text-xl font-bold mt-2 mb-3 border-b border-white/10 pb-2";
+
+    root.appendChild(heading);
+    root.appendChild(helper);
+    root.appendChild(soundHeading);
+
+    for (const [key, meta] of Object.entries(constants.EXT_SOUND_SETTINGS)) {
+      root.appendChild(buildSoundSettingRow(key, meta));
+    }
+
+    buildExtensionKeybindRows(root);
+  }
+
+  function ensureExtensionRoot(scroll) {
     let root = document.getElementById(ROOT_ID);
     if (!root) {
       root = document.createElement("div");
       root.id = ROOT_ID;
+      root.className = "flex flex-col gap-2";
+      buildExtensionTabContent(root);
+      scroll.appendChild(root);
+    }
+    return root;
+  }
 
-      const heading = document.createElement("h2");
-      heading.textContent = SECTION_TITLE;
-      heading.className =
-        "text-blue-200 text-xl font-bold mt-8 mb-3 border-b border-white/10 pb-2";
+  function updateTabButtonState(button, active) {
+    if (!button) return;
+    button.className = [
+      "px-6 py-2 text-xs font-bold transition-all duration-200 rounded-lg uppercase tracking-widest",
+      active
+        ? "bg-blue-500/20 text-blue-400 border border-blue-500/30 shadow-[0_0_15px_rgba(59,130,246,0.2)]"
+        : "text-white/40 hover:text-white hover:bg-white/5 border border-transparent",
+    ].join(" ");
+  }
 
-      const helper = document.createElement("p");
-      helper.className = "text-white/60 text-xs mb-3";
-      helper.textContent =
-        "Configure extension shortcuts here. Conflicts with game keybinds are blocked.";
+  function syncHostTabButtonState(ctx) {
+    if (!ctx?.tabRow) return;
 
-      root.appendChild(heading);
-      root.appendChild(helper);
-      buildExtensionSettingRows(root);
+    const active = Boolean(state.extensionSettingsTabActive);
+    for (const button of ctx.tabRow.querySelectorAll(":scope > button")) {
+      if (button.id === TAB_BUTTON_ID) continue;
 
-      ctx.parent.appendChild(root);
+      if (active) {
+        if (button.dataset.ofeOriginalClass == null) {
+          button.dataset.ofeOriginalClass = button.className || "";
+        }
+        button.className = HOST_TAB_INACTIVE_CLASS;
+        continue;
+      }
+
+      if (button.dataset.ofeOriginalClass != null) {
+        button.className = button.dataset.ofeOriginalClass;
+        delete button.dataset.ofeOriginalClass;
+      }
+    }
+  }
+
+  function ensureTabButton(ctx) {
+    if (!ctx.tabRow) return null;
+
+    for (const button of ctx.tabRow.querySelectorAll(":scope > button")) {
+      if (button.id === TAB_BUTTON_ID || button.dataset.ofeTabBound === "1") continue;
+      button.dataset.ofeTabBound = "1";
+      button.addEventListener("click", () => {
+        state.extensionSettingsTabActive = false;
+      });
     }
 
+    let button = document.getElementById(TAB_BUTTON_ID);
+    if (!button) {
+      button = document.createElement("button");
+      button.id = TAB_BUTTON_ID;
+      button.textContent = "Extension";
+      button.addEventListener("click", () => {
+        state.extensionSettingsTabActive = true;
+        applyExtensionTabState();
+      });
+      ctx.tabRow.appendChild(button);
+    }
+
+    updateTabButtonState(button, Boolean(state.extensionSettingsTabActive));
+    return button;
+  }
+
+  function syncExtensionKeybindRows(root) {
     for (const action of Object.keys(constants.EXT_SHORTCUTS)) {
       const el = root.querySelector(`setting-keybind[action="ofe.${action}"]`);
       if (el) syncSettingElementValue(el, action);
     }
+    for (const key of Object.keys(constants.EXT_SOUND_SETTINGS)) {
+      const toggle = root.querySelector(`[data-ofe-setting="${key}"]`);
+      if (toggle) syncToggleValue(toggle, key);
+    }
+  }
+
+  function applyExtensionTabState() {
+    const ctx = findModalContext();
+    if (!ctx) return;
+
+    const root = ensureExtensionRoot(ctx.scroll);
+    ensureTabButton(ctx);
+    syncExtensionKeybindRows(root);
+    syncHostTabButtonState(ctx);
+
+    const active = Boolean(state.extensionSettingsTabActive);
+    ctx.defaultContent.style.display = active ? "none" : "";
+    root.style.display = active ? "" : "none";
+  }
+
+  function ensureSettingsSection() {
+    const ctx = findModalContext();
+    if (!ctx) return;
+
+    ensureExtensionRoot(ctx.scroll);
+    ensureTabButton(ctx);
+    applyExtensionTabState();
   }
 
   fn.initSettingsIntegration = () => {
     if (state.settingsIntegrationInit) return;
     state.settingsIntegrationInit = true;
+    state.extensionSettingsTabActive = false;
 
     setInterval(() => {
       ensureSettingsSection();

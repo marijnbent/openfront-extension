@@ -97,6 +97,12 @@
       focusID: smallID != null ? smallID : undefined,
       duration: 1200,
     });
+
+    if (fn.playExtensionSound) {
+      fn.playExtensionSound(
+        kind === "sleeping" ? "neighborSleeping" : "neighborTraitor",
+      );
+    }
   }
 
   async function scanNeighborStatuses() {

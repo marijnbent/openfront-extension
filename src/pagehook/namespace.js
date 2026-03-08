@@ -32,6 +32,12 @@
       latestGameSocket: null,
       overrideNextBoat: false,
       boatDispatching: false,
+      lastBoatLandingSoundTick: -1,
+      lastBoatDestroyedSoundTick: -1,
+      lastWarshipDestroyedSoundTick: -1,
+      lastMirvInboundSoundTick: -1,
+      lastNukeInboundSoundTick: -1,
+      lastHydrogenInboundSoundTick: -1,
 
       // Territory cycle
       territoryCycleIndex: 0,
@@ -39,6 +45,8 @@
       // Info panel
       shortcutPanelState: null,
       shortcutPanelWatch: null,
+      extensionSettingsTabActive: false,
+      extensionSettingsCache: null,
 
       // Neighbor status monitor
       neighborWatchInterval: null,

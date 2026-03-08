@@ -8,8 +8,19 @@
 
   // Values from OpenFront MessageType enum.
   ns.constants.MESSAGE_TYPE = {
+    MIRV_INBOUND: 4,
+    NUKE_INBOUND: 5,
+    HYDROGEN_BOMB_INBOUND: 6,
+    NAVAL_INVASION_INBOUND: 7,
     ALLIANCE_REQUEST: 15,
+    UNIT_DESTROYED: 12,
     CHAT: 23,
+  };
+
+  ns.constants.GAME_UPDATE_TYPE = {
+    UNIT: 1,
+    DISPLAY_EVENT: 3,
+    UNIT_INCOMING: 14,
   };
 
   ns.constants.EXT_SHORTCUTS = {
@@ -39,9 +50,52 @@
     },
     territoryCycle: {
       action: "territoryCycle",
-      label: "Cycle Territories",
-      desc: "Jump camera between disconnected territories",
+      label: "Mini Territories",
+      desc: "Jump camera between disconnected mini territories (100 tiles or fewer)",
       defaultCode: "KeyL",
+    },
+  };
+
+  ns.constants.EXT_SOUND_SETTINGS = {
+    spawnEntry: {
+      label: "OFE: Spawn Phase",
+      desc: "Play a short chime when spawn phase begins.",
+    },
+    gameStart: {
+      label: "OFE: Game Start",
+      desc: "Play a short chime when the match starts.",
+    },
+    boatLanding: {
+      label: "OFE: Boat Landing",
+      desc: "Play a harbor bell when one of your transport ships lands.",
+    },
+    boatDestroyed: {
+      label: "OFE: Boat Destroyed",
+      desc: "Play a splash-like alert when one of your transport ships is destroyed.",
+    },
+    warshipDestroyed: {
+      label: "OFE: Warship Destroyed",
+      desc: "Play a heavy horn when one of your warships is destroyed.",
+    },
+    neighborSleeping: {
+      label: "OFE: Neighbor Sleeping",
+      desc: "Play a soft drooping alert when a neighboring player falls asleep.",
+    },
+    neighborTraitor: {
+      label: "OFE: Neighbor Traitor",
+      desc: "Play a sharp warning when a neighboring player betrays and becomes traitor.",
+    },
+    nukeInbound: {
+      label: "OFE: Atom Nuke",
+      desc: "Play an air-raid warning when an atom bomb is inbound.",
+    },
+    hydrogenInbound: {
+      label: "OFE: Hydrogen Bomb",
+      desc: "Play a deeper long-form alarm when a hydrogen bomb is inbound.",
+    },
+    mirvInbound: {
+      label: "OFE: MIRV",
+      desc: "Play the highest-urgency alarm when a MIRV is inbound.",
     },
   };
 
