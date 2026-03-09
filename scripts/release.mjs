@@ -23,7 +23,7 @@ const GITHUB_API_VERSION = '2022-11-28';
 
 function printUsage() {
   console.log(`Usage:
-  npm run release -- [patch|minor|major|X.Y.Z] [--draft] [--github-only|--chrome-only]
+  npm run release -- [patch|minor|major|X.Y.Z] [--draft] [--github-only|--chrome-only] [--include-current-changes]
   npm run release:check
 
 Examples:
@@ -31,6 +31,7 @@ Examples:
   npm run release -- minor
   npm run release -- 0.2.0
   npm run release -- patch --draft
+  npm run release -- patch --include-current-changes
   npm run release:github -- patch`);
 }
 
@@ -39,6 +40,7 @@ function parseArgs(argv) {
     draft: false,
     githubOnly: false,
     chromeOnly: false,
+    includeCurrentChanges: false,
     checkConfig: false,
     target: 'patch'
   };
@@ -61,6 +63,11 @@ function parseArgs(argv) {
 
     if (arg === '--check-config') {
       options.checkConfig = true;
+      continue;
+    }
+
+    if (arg === '--include-current-changes') {
+      options.includeCurrentChanges = true;
       continue;
     }
 
@@ -187,6 +194,14 @@ async function ensureCleanWorktree() {
   if (status) {
     throw new Error('Release requires a clean git worktree. Commit or stash current changes first.');
   }
+}
+
+async function listWorktreeChanges() {
+  const status = await runCommand('git', ['status', '--porcelain']);
+  return status
+    .split('\n')
+    .map((line) => line.trimEnd())
+    .filter(Boolean);
 }
 
 async function ensureTagAbsent(tagName) {
@@ -485,7 +500,12 @@ async function main() {
     throw new Error(configProblems.join('\n'));
   }
 
-  await ensureCleanWorktree();
+  const worktreeChanges = await listWorktreeChanges();
+  if (worktreeChanges.length > 0 && !options.includeCurrentChanges) {
+    throw new Error(
+      'Release requires a clean git worktree. Commit or stash current changes first, or rerun with --include-current-changes.'
+    );
+  }
 
   const manifest = await readManifest();
   const nextVersion = bumpSemver(manifest.version, options.target);
@@ -520,7 +540,11 @@ async function main() {
       const repoSlug = await getRepoSlug();
       const token = await getGitHubToken();
 
-      await runCommand('git', ['add', 'manifest.json']);
+      if (options.includeCurrentChanges) {
+        await runCommand('git', ['add', '-A']);
+      } else {
+        await runCommand('git', ['add', 'manifest.json']);
+      }
       await runCommand('git', ['commit', '-m', `chore: release ${tagName}`]);
       keepManifestChanges = true;
       await runCommand('git', ['tag', tagName]);

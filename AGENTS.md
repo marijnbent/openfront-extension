@@ -10,7 +10,8 @@
 - Avoid touching user-modified files unless the task requires it.
 
 ## Build And Release
-- Use `npm run build` or `make build` to produce a packaged extension zip under `dist/`.
-- Use `npm run release -- patch` or `make release` to bump the version, package the extension, publish it to the Chrome Web Store, create a release commit and tag, push them, and publish a GitHub release.
-- Validate first-time credentials with `npm run release:check` or `make release-check`.
-- Override the release version with `make release BUMP=minor`, `make release BUMP=major`, or `make release VERSION=0.2.0`.
+- Use `npm run build` to produce a packaged extension zip under `dist/`.
+- Use `npm run release -- patch` to bump the version, package the extension, publish it to the Chrome Web Store, create a release commit and tag, push them, and publish a GitHub release.
+- If the repo already contains the changes you want to ship, use `npm run release:current -- patch`.
+- Validate first-time credentials with `npm run release:check`.
+- Override the release version with `npm run release -- minor`, `npm run release -- major`, or `npm run release -- 0.2.0`.

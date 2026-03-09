@@ -43,12 +43,14 @@ After that, configure API access:
 - `npm run release -- minor`
 - `npm run release -- major`
 - `npm run release -- 0.2.0`
+- `npm run release:current -- patch`
 - `npm run release:github`
 - `npm run release:chrome`
 
 ## Notes
 
-- The release command requires a clean git worktree.
+- The default release command requires a clean git worktree.
+- Use `npm run release:current -- patch` if you want the release commit to include the current repo changes.
 - Chrome Web Store uploads still go through review before users receive the update.
 - If you change Chrome Web Store visibility manually in the dashboard, Google requires one manual publish with the new visibility before API publishing works again.
 
