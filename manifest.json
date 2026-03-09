@@ -4,10 +4,22 @@
   "version": "0.1.0",
   "description": "Red markers on nations during spawn selection, visible at any zoom level.",
   "permissions": [],
-  "host_permissions": ["*://openfront.io/*", "*://www.openfront.io/*"],
+  "host_permissions": [
+    "*://openfront.io/*",
+    "*://www.openfront.io/*",
+    "*://openfront.dev/*",
+    "*://www.openfront.dev/*",
+    "*://*.openfront.dev/*"
+  ],
   "content_scripts": [
     {
-      "matches": ["*://openfront.io/*", "*://www.openfront.io/*"],
+      "matches": [
+        "*://openfront.io/*",
+        "*://www.openfront.io/*",
+        "*://openfront.dev/*",
+        "*://www.openfront.dev/*",
+        "*://*.openfront.dev/*"
+      ],
       "js": [
         "src/pagehook/namespace.js",
         "src/pagehook/constants.js",
@@ -27,7 +39,13 @@
       "world": "MAIN"
     },
     {
-      "matches": ["*://openfront.io/*", "*://www.openfront.io/*"],
+      "matches": [
+        "*://openfront.io/*",
+        "*://www.openfront.io/*",
+        "*://openfront.dev/*",
+        "*://www.openfront.dev/*",
+        "*://*.openfront.dev/*"
+      ],
       "js": ["src/content.js"],
       "css": ["src/content.css"],
       "run_at": "document_start"

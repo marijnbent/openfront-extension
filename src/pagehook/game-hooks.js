@@ -7,6 +7,8 @@
   const { state, constants, fn } = ns;
   const BOAT_OVERRIDE_WINDOW_MS = 1500;
   let sharedAudioContext = null;
+  let audioUnlocked = false;
+  let audioUnlockInitialized = false;
 
   function setGamePhase(newPhase) {
     const oldPhase = state.gamePhase;
@@ -31,16 +33,44 @@
     return fn.anyExtensionSoundsEnabled ? fn.anyExtensionSoundsEnabled() : true;
   }
 
-  function getAudioContext() {
+  function getAudioContext(options = {}) {
+    const { createIfNeeded = false } = options;
     const Ctx = window.AudioContext || window.webkitAudioContext;
     if (!Ctx) return null;
+    if (!audioUnlocked && !createIfNeeded) return null;
     if (!sharedAudioContext || sharedAudioContext.state === "closed") {
       sharedAudioContext = new Ctx();
     }
-    if (sharedAudioContext.state === "suspended") {
+    if (sharedAudioContext.state === "suspended" && (audioUnlocked || createIfNeeded)) {
       sharedAudioContext.resume().catch(() => {});
     }
     return sharedAudioContext;
+  }
+
+  function unlockAudio() {
+    audioUnlocked = true;
+    const ctx = getAudioContext({ createIfNeeded: true });
+    if (ctx && ctx.state === "suspended") {
+      ctx.resume().catch(() => {});
+    }
+    return ctx;
+  }
+
+  function initAudioUnlock() {
+    if (audioUnlockInitialized) return;
+    audioUnlockInitialized = true;
+
+    const unlock = () => {
+      unlockAudio();
+
+      window.removeEventListener("pointerdown", unlock, true);
+      window.removeEventListener("keydown", unlock, true);
+      window.removeEventListener("touchstart", unlock, true);
+    };
+
+    window.addEventListener("pointerdown", unlock, { capture: true, passive: true });
+    window.addEventListener("keydown", unlock, true);
+    window.addEventListener("touchstart", unlock, { capture: true, passive: true });
   }
 
   function playTone(options) {
@@ -407,7 +437,10 @@
     }
   };
 
-  fn.previewExtensionSound = (key) => fn.playExtensionSound(key, true);
+  fn.previewExtensionSound = (key) => {
+    unlockAudio();
+    return fn.playExtensionSound(key, true);
+  };
 
   function maybePlayGameSounds(gu) {
     if (!gu || gu.tick == null) {
@@ -657,6 +690,10 @@
   }
 
   function updateFromGameUpdate(gu) {
+    if (!gu || typeof gu !== "object" || !gu.updates) {
+      return;
+    }
+
     if (gu.tick != null && gu.tick <= 3) {
       for (const k in state.playerTypeById) delete state.playerTypeById[k];
       for (const k in state.playerTroopsById) delete state.playerTroopsById[k];
@@ -876,6 +913,14 @@
             const msg = event.data;
             if (msg && msg.type === "game_update" && msg.gameUpdate) {
               updateFromGameUpdate(msg.gameUpdate);
+            } else if (
+              msg &&
+              msg.type === "game_update_batch" &&
+              Array.isArray(msg.gameUpdates)
+            ) {
+              for (const gameUpdate of msg.gameUpdates) {
+                updateFromGameUpdate(gameUpdate);
+              }
             }
           } catch (_) {}
           return originalListener.apply(this, arguments);
@@ -1045,4 +1090,6 @@
       playGameStartChime();
     }
   });
+
+  initAudioUnlock();
 })();

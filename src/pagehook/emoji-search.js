@@ -23,6 +23,17 @@
     return Array.from(emojiTable.querySelectorAll(".grid button"));
   }
 
+  function findEmojiIndex(emoji) {
+    const buttons = getEmojiButtons();
+    for (let index = 0; index < buttons.length; index++) {
+      const text = (buttons[index].textContent || "").trim();
+      if (text === emoji) {
+        return index;
+      }
+    }
+    return -1;
+  }
+
   function emojiMatchesQuery(emoji, tokens) {
     const keywords = constants.EMOJI_KEYWORDS[emoji] || [];
     return fn.matchesAllTokens(`${emoji} ${keywords.join(" ")}`, tokens);
@@ -134,27 +145,120 @@
     }, 200);
   }
 
+  function showEmojiSearchPaletteWhenReady(triesLeft = 16) {
+    const emojiTable = fn.getEmojiTable();
+    if (emojiTable && emojiTable.isVisible) {
+      showEmojiSearchPalette();
+      return;
+    }
+    if (triesLeft <= 0) return;
+    setTimeout(() => showEmojiSearchPaletteWhenReady(triesLeft - 1), 25);
+  }
+
+  function getEmojiTargetContext(emojiTable) {
+    const game =
+      (emojiTable && emojiTable.game) ||
+      (fn.getAnyGameView ? fn.getAnyGameView() : null);
+    if (!game || typeof game.myPlayer !== "function") return null;
+
+    const myPlayer = game.myPlayer();
+    if (!myPlayer || typeof myPlayer.id !== "function") return null;
+
+    const hoveredPlayer = fn.getHoveredPlayer ? fn.getHoveredPlayer() : null;
+    if (hoveredPlayer && typeof hoveredPlayer.id === "function") {
+      return {
+        game,
+        recipient: hoveredPlayer.id() === myPlayer.id() ? "AllPlayers" : hoveredPlayer,
+      };
+    }
+
+    const transformHandler = emojiTable && emojiTable.transformHandler;
+    if (
+      !transformHandler ||
+      typeof transformHandler.screenToWorldCoordinates !== "function" ||
+      typeof game.isValidCoord !== "function" ||
+      typeof game.ref !== "function" ||
+      typeof game.hasOwner !== "function" ||
+      typeof game.owner !== "function"
+    ) {
+      return null;
+    }
+
+    const x = fn.clamp(state.lastMouseX, 0, window.innerWidth - 1);
+    const y = fn.clamp(state.lastMouseY, 0, window.innerHeight - 1);
+    const cell = transformHandler.screenToWorldCoordinates(x, y);
+    if (!cell || !game.isValidCoord(cell.x, cell.y)) return null;
+
+    const tile = game.ref(cell.x, cell.y);
+    if (!game.hasOwner(tile)) return null;
+
+    const owner = game.owner(tile);
+    if (!owner || typeof owner.id !== "function") return null;
+
+    return {
+      game,
+      recipient: owner.id() === myPlayer.id() ? "AllPlayers" : owner,
+    };
+  }
+
+  function sendEmojiIntent(recipient, emojiIndex) {
+    if (
+      !state.latestGameSocket ||
+      state.latestGameSocket.readyState !== WebSocket.OPEN
+    ) {
+      return false;
+    }
+
+    try {
+      state.latestGameSocket.send(
+        JSON.stringify({
+          type: "intent",
+          intent: {
+            type: "emoji",
+            recipient:
+              recipient === "AllPlayers" ? "AllPlayers" : recipient.id(),
+            emoji: emojiIndex,
+          },
+        }),
+      );
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   fn.hideEmojiSearchPalette = hideEmojiSearchPalette;
 
   fn.openEmojiForHoveredTile = () => {
-    const x = fn.clamp(state.lastMouseX, 0, window.innerWidth - 1);
-    const y = fn.clamp(state.lastMouseY, 0, window.innerHeight - 1);
+    const emojiTable = fn.getEmojiTable();
+    if (!emojiTable || typeof emojiTable.showTable !== "function") return;
 
-    window.dispatchEvent(
-      new PointerEvent("pointerup", {
-        bubbles: true,
-        cancelable: true,
-        button: 0,
-        buttons: 0,
-        pointerId: 1,
-        pointerType: "mouse",
-        isPrimary: true,
-        clientX: x,
-        clientY: y,
-        altKey: true,
-      }),
-    );
+    const target = getEmojiTargetContext(emojiTable);
+    if (!target || !target.recipient) {
+      fn.pushBottomRightLog("Hover a player or owned tile and press emoji again.");
+      return;
+    }
 
-    setTimeout(showEmojiSearchPalette, 0);
+    hideEmojiSearchPalette();
+
+    emojiTable.showTable((emoji) => {
+      const emojiIndex = findEmojiIndex(emoji);
+      if (emojiIndex < 0) {
+        fn.pushBottomRightLog("Could not send emoji.");
+        return;
+      }
+
+      if (!sendEmojiIntent(target.recipient, emojiIndex)) {
+        fn.pushBottomRightLog("Emoji send unavailable right now.");
+        return;
+      }
+
+      if (typeof emojiTable.hideTable === "function") {
+        emojiTable.hideTable();
+      }
+      hideEmojiSearchPalette();
+    });
+
+    showEmojiSearchPaletteWhenReady();
   };
 })();

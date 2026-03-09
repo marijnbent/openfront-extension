@@ -1,0 +1,12 @@
+{
+  "name": "openfront-enhanced-extension",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node ./scripts/build.mjs",
+    "release": "node ./scripts/release.mjs",
+    "release:check": "node ./scripts/release.mjs --check-config",
+    "release:github": "node ./scripts/release.mjs --github-only",
+    "release:chrome": "node ./scripts/release.mjs --chrome-only"
+  }
+}

@@ -2,7 +2,7 @@
 
 ![Screenshot of spawn phase with nation markers and shortcut panel](screenshot.png)
 
-Chrome extension that adds quality-of-life improvements to [openfront.io](https://openfront.io).
+Chrome extension that adds quality-of-life improvements to [openfront.io](https://openfront.io) and [openfront.dev](https://openfront.dev).
 
 ## Features
 
@@ -48,7 +48,7 @@ Notifications appear in the bottom-right when a neighboring player:
 4. Click **Load unpacked**
 5. Select the `extension/` directory
 
-The extension will activate automatically when you visit openfront.io.
+The extension will activate automatically when you visit `openfront.io`, `openfront.dev`, or any `*.openfront.dev` subdomain.
 
 ## Contributing
 
