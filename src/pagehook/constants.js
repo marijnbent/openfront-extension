@@ -44,10 +44,10 @@
       desc: "Boat attack with fixed 1% troops",
       defaultCode: "KeyN",
     },
-    territoryCycle: {
-      action: "territoryCycle",
-      label: "Cycle Mini",
-      desc: "Jump camera between disconnected mini territories (100 tiles or fewer)",
+    showMiniTerritories: {
+      action: "showMiniTerritories",
+      label: "Show Minis",
+      desc: "Show every disconnected mini territory for three seconds",
       defaultCode: "KeyH",
     },
     lastOfeAlert: {

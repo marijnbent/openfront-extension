@@ -525,8 +525,23 @@
     state.settingsIntegrationInit = true;
     state.extensionSettingsTabActive = false;
 
-    setInterval(() => {
+    const attach = () => {
+      const modal = document.querySelector("user-setting");
+      if (!modal) return false;
       ensureSettingsSection();
-    }, 800);
+      state.settingsObserver?.disconnect();
+      state.settingsObserver = new MutationObserver(ensureSettingsSection);
+      state.settingsObserver.observe(modal, { childList: true, subtree: true });
+      return true;
+    };
+
+    customElements.whenDefined("user-setting").then(() => {
+      if (attach()) return;
+      const observer = new MutationObserver(() => {
+        if (!attach()) return;
+        observer.disconnect();
+      });
+      observer.observe(document.documentElement, { childList: true, subtree: true });
+    });
   };
 })();

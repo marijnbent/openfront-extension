@@ -2,10 +2,10 @@
 
 ## Scope
 - Only modify files inside `/Users/marijn/Projects/openfront-extended`.
-- Treat `/Users/marijn/Clones/OpenFrontIO` as a read-only reference repo for behavior, assets, and feature parity checks.
+- Treat `reference/OpenFrontIO` as a read-only reference copy for behavior, assets, and feature parity checks.
 
 ## Change Rules
-- Do not edit or stage changes in `/Users/marijn/Clones/OpenFrontIO`.
+- Do not edit files in `reference/OpenFrontIO`.
 - Prefer matching OpenFront behavior and terminology when porting or extending features in this extension.
 - Avoid touching user-modified files unless the task requires it.
 

@@ -8,12 +8,6 @@
   const FILTER_KEY = "ofe.events.panel.hidden";
   const BUTTON_ID = "ofe-events-filter-toggle";
   const MARKER = "\u2063\u2064\u2063";
-  const CATEGORY = {
-    ATTACK: "ATTACK",
-    NUKE: "NUKE",
-    ALLIANCE: "ALLIANCE",
-    CHAT: "CHAT",
-  };
 
   function readHiddenSetting() {
     try {
@@ -42,46 +36,21 @@
     return String(row && row.textContent ? row.textContent : "").includes(MARKER);
   }
 
-  function getMessageCategory(type) {
-    if (
-      type === ns.constants.MESSAGE_TYPE.NAVAL_INVASION_INBOUND ||
-      type === ns.constants.MESSAGE_TYPE.UNIT_DESTROYED
-    ) {
-      return CATEGORY.ATTACK;
-    }
-    if (
-      type === ns.constants.MESSAGE_TYPE.MIRV_INBOUND ||
-      type === ns.constants.MESSAGE_TYPE.NUKE_INBOUND ||
-      type === ns.constants.MESSAGE_TYPE.HYDROGEN_BOMB_INBOUND
-    ) {
-      return CATEGORY.NUKE;
-    }
-    if (type === ns.constants.MESSAGE_TYPE.ALLIANCE_REQUEST) {
-      return CATEGORY.ALLIANCE;
-    }
-    return CATEGORY.CHAT;
-  }
-
   function getVisibleOfeEvents(eventsDisplay) {
     const events = Array.isArray(eventsDisplay.events) ? eventsDisplay.events : [];
-    const filters = eventsDisplay.eventsFilters instanceof Map
-      ? eventsDisplay.eventsFilters
-      : null;
-
     return events
       .filter((event) => event && event.ofeExtensionEvent)
-      .filter((event) => {
-        const category = getMessageCategory(event.type);
-        return !(filters && filters.get(category));
-      })
-      .sort((a, b) => {
-        const aPrior = a.priority ?? 100000;
-        const bPrior = b.priority ?? 100000;
-        if (aPrior === bPrior) {
-          return a.createdAt - b.createdAt;
-        }
-        return bPrior - aPrior;
-      });
+      .sort((a, b) => a.createdAt - b.createdAt);
+  }
+
+  function eventText(event) {
+    const holder = document.createElement("div");
+    if (event.unsafeDescription) {
+      holder.innerHTML = String(event.description || "");
+    } else {
+      holder.textContent = String(event.description || "");
+    }
+    return String(holder.textContent || "").trim();
   }
 
   function bindOfeRowInteraction(row, event) {
@@ -121,20 +90,16 @@
     button.setAttribute("aria-label", button.title);
   }
 
-  function ensureButton(eventsDisplay) {
-    const controlsRow = Array.from(eventsDisplay.querySelectorAll("div.flex.gap-4")).find(
-      (el) => el.querySelector("img"),
-    );
-    if (!controlsRow) return null;
-
-    let button = eventsDisplay.querySelector(`#${BUTTON_ID}`);
+  function ensureButton(eventsDisplay, visible) {
+    let button = document.getElementById(BUTTON_ID);
     if (!button) {
       button = document.createElement("button");
       button.type = "button";
       button.id = BUTTON_ID;
       button.textContent = "OFE";
       button.style.cssText =
-        "display:inline-flex;align-items:center;justify-content:center;height:20px;min-width:30px;" +
+        "position:fixed;z-index:6;display:inline-flex;align-items:center;justify-content:center;" +
+        "height:20px;min-width:30px;" +
         "padding:0 6px;border:1px solid rgba(148,163,184,0.28);border-radius:6px;" +
         "background:rgba(15,23,42,0.72);color:#e2e8f0;font-size:10px;font-weight:700;" +
         "cursor:pointer;line-height:1;";
@@ -144,9 +109,13 @@
         writeHiddenSetting(panelState.hidden);
         syncEventsPanel();
       });
-      controlsRow.appendChild(button);
+      document.body.appendChild(button);
     }
 
+    const rect = eventsDisplay.getBoundingClientRect();
+    button.style.left = `${Math.max(4, Math.round(rect.left - 38))}px`;
+    button.style.top = `${Math.max(4, Math.round(rect.top))}px`;
+    button.style.display = visible ? "inline-flex" : "none";
     updateButtonAppearance(button, ensureState().hidden);
     return button;
   }
@@ -156,27 +125,50 @@
     if (!eventsDisplay) return;
 
     const panelState = ensureState();
-    ensureButton(eventsDisplay);
-
-    const rows = eventsDisplay.querySelectorAll(".events-container tbody tr");
     const ofeEvents = getVisibleOfeEvents(eventsDisplay);
-    let ofeIndex = 0;
+    const rows = eventsDisplay.querySelectorAll(
+      ".events-container tbody tr, .important-events-container tbody tr",
+    );
+    const unmatchedEvents = [...ofeEvents];
+    let hasOfeRows = false;
 
     for (const row of rows) {
-      if (!isOfeRow(row)) {
-        row.style.display = "";
-        bindOfeRowInteraction(row, null);
-        continue;
-      }
-      const event = ofeEvents[ofeIndex++] || null;
+      if (!isOfeRow(row)) continue;
+      hasOfeRows = true;
+
+      const rowText = String(row.textContent || "").trim();
+      let eventIndex = unmatchedEvents.findIndex(
+        (event) => eventText(event) === rowText,
+      );
+      if (eventIndex < 0) eventIndex = 0;
+      const event = unmatchedEvents.splice(eventIndex, 1)[0] || null;
       row.style.display = panelState.hidden ? "none" : "";
       bindOfeRowInteraction(row, event);
     }
+
+    ensureButton(eventsDisplay, hasOfeRows);
+  }
+
+  function observeEventsDisplay() {
+    const eventsDisplay = document.querySelector("events-display");
+    if (!eventsDisplay || state.eventsPanelElement === eventsDisplay) return;
+
+    state.eventsPanelObserver?.disconnect();
+    state.eventsPanelElement = eventsDisplay;
+    state.eventsPanelObserver = new MutationObserver(syncEventsPanel);
+    state.eventsPanelObserver.observe(eventsDisplay, {
+      childList: true,
+      subtree: true,
+    });
+    syncEventsPanel();
   }
 
   fn.initEventsPanelIntegration = () => {
-    if (state.eventsPanelWatch) return;
+    if (state.eventsPanelInitialized) return;
     ensureState();
-    state.eventsPanelWatch = window.setInterval(syncEventsPanel, 250);
+    state.eventsPanelInitialized = true;
+    customElements.whenDefined("events-display").then(observeEventsDisplay);
+    fn.onNativeGameTick?.(observeEventsDisplay);
+    window.addEventListener("resize", syncEventsPanel);
   };
 })();

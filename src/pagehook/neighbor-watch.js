@@ -157,10 +157,21 @@
   }
 
   fn.initNeighborWatch = () => {
-    if (state.neighborWatchInterval) return;
-    state.neighborWatchInterval = setInterval(() => {
+    if (state.neighborWatchInitialized) return;
+    state.neighborWatchInitialized = true;
+    fn.onNativeGameChange?.(() => {
+      state.neighborLastScanTick = null;
+      state.neighborStatusById = {};
+    });
+    fn.onNativeGameTick?.(({ tick }) => {
+      if (
+        state.neighborLastScanTick != null &&
+        tick - state.neighborLastScanTick < 10
+      ) {
+        return;
+      }
+      state.neighborLastScanTick = tick;
       void scanNeighborStatuses();
-    }, 1000);
-    void scanNeighborStatuses();
+    });
   };
 })();

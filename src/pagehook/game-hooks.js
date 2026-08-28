@@ -5,10 +5,14 @@
   if (!ns) return;
 
   const { state, constants, fn } = ns;
-  state.playerAliveById = state.playerAliveById || {};
-  state.playerTypeBySmallId = state.playerTypeBySmallId || {};
-  state.spawnPhaseTurns = state.spawnPhaseTurns ?? null;
-  const BOAT_OVERRIDE_WINDOW_MS = 1500;
+  state.seenBoatLandingIndicatorUnitIds =
+    state.seenBoatLandingIndicatorUnitIds || new Set();
+  state.boatLandingIndicators = state.boatLandingIndicators || [];
+  state.boatLandingIndicatorSequence =
+    state.boatLandingIndicatorSequence || 0;
+  const BOAT_LANDING_INDICATOR_MS = 4000;
+  const MINI_TERRITORY_MARKER_MS = 3000;
+  const MARKER_PUBLISH_INTERVAL_MS = 250;
   const INBOUND_ATTACK_ALERT_COOLDOWN_TICKS = 100;
   const GROUND_ATTACK_ALERT_MIN_RATIO = 0.15;
   const BUILDING_STACK_MIN_LEVEL = 10;
@@ -23,13 +27,24 @@
   let sharedAudioContext = null;
   let audioUnlocked = false;
   let audioUnlockInitialized = false;
+  let spawnEntryAlertPlayed = false;
+  let lastMarkerPublishAt = -Infinity;
+
+  function writeAttribute(name, value) {
+    const serialized = typeof value === "string" ? value : JSON.stringify(value);
+    if (document.documentElement.getAttribute(name) === serialized) return;
+    document.documentElement.setAttribute(name, serialized);
+  }
 
   function writeGamePhaseAttribute(phase) {
     try {
-      document.documentElement.setAttribute("data-ofe-game-phase", phase);
+      writeAttribute("data-ofe-game-phase", phase);
       if (phase === "none") {
         document.documentElement.removeAttribute("data-ofe-nations");
         document.documentElement.removeAttribute("data-ofe-building-stacks");
+        document.documentElement.removeAttribute("data-ofe-transport-ships");
+        document.documentElement.removeAttribute("data-ofe-boat-landings");
+        document.documentElement.removeAttribute("data-ofe-mini-territories");
         document.documentElement.removeAttribute("data-ofe-map-transform");
       }
     } catch (_) {}
@@ -50,100 +65,9 @@
 
   setGamePhase(state.gamePhase || "none");
 
-  function finiteNumberOrNull(value) {
-    const number = Number(value);
-    return Number.isFinite(number) ? number : null;
-  }
-
-  function cacheSpawnPhaseTurns(value) {
-    const turns = finiteNumberOrNull(value);
-    if (turns != null && turns >= 0) {
-      state.spawnPhaseTurns = turns;
-      return turns;
-    }
-    return null;
-  }
-
-  function readConfigValue(config, key) {
-    if (!config) return undefined;
-    const value = config[key];
-    if (typeof value === "function") {
-      try {
-        return value.call(config);
-      } catch (_) {
-        return undefined;
-      }
-    }
-    return value;
-  }
-
-  function readNestedGameConfig(config) {
-    const nestedConfig = readConfigValue(config, "gameConfig");
-    return nestedConfig && typeof nestedConfig === "object" ? nestedConfig : null;
-  }
-
-  function cacheSpawnPhaseTurnsFromConfig(config) {
-    if (!config) return null;
-
-    const directTurns = readConfigValue(config, "numSpawnPhaseTurns");
-    const cachedDirectTurns = cacheSpawnPhaseTurns(directTurns);
-    if (cachedDirectTurns != null) return cachedDirectTurns;
-
-    const nestedConfig = readNestedGameConfig(config);
-    const gameType =
-      readConfigValue(config, "gameType") ??
-      readConfigValue(nestedConfig, "gameType");
-    const randomSpawn =
-      readConfigValue(config, "randomSpawn") === true ||
-      readConfigValue(config, "isRandomSpawn") === true ||
-      readConfigValue(nestedConfig, "randomSpawn") === true ||
-      readConfigValue(nestedConfig, "isRandomSpawn") === true;
-    if (gameType === "Singleplayer") return cacheSpawnPhaseTurns(100);
-    if (randomSpawn) return cacheSpawnPhaseTurns(150);
-    if (typeof gameType === "string") return cacheSpawnPhaseTurns(300);
-
-    return null;
-  }
-
-  function cacheSpawnPhaseTurnsFromGameStartInfo(gameStartInfo) {
-    return cacheSpawnPhaseTurnsFromConfig(
-      gameStartInfo && (gameStartInfo.config || gameStartInfo.gameConfig),
-    );
-  }
-
-  function getSpawnPhaseTurns() {
-    const cachedTurns = finiteNumberOrNull(state.spawnPhaseTurns);
-    if (cachedTurns != null) return cachedTurns;
-
-    const game = fn.getAnyGameView ? fn.getAnyGameView() : null;
-    const config =
-      game && typeof game.config === "function" ? game.config() : null;
-    return cacheSpawnPhaseTurnsFromConfig(config);
-  }
-
-  function syncGamePhaseFromUpdateTick(tick) {
-    const numericTick = finiteNumberOrNull(tick);
-    if (numericTick == null) return;
-
-    const spawnPhaseTurns = getSpawnPhaseTurns();
-    if (spawnPhaseTurns != null) {
-      setGamePhase(numericTick <= spawnPhaseTurns ? "spawn" : "playing");
-      return;
-    }
-
-    if (numericTick <= 3) {
-      setGamePhase("spawn");
-      return;
-    }
-
-    if (state.gamePhase !== "spawn") return;
-
-    const game = fn.getAnyGameView ? fn.getAnyGameView() : null;
-    if (game && typeof game.inSpawnPhase === "function") {
-      try {
-        if (!game.inSpawnPhase()) setGamePhase("playing");
-      } catch (_) {}
-    }
+  function syncGamePhase(game) {
+    if (!game || typeof game.inSpawnPhase !== "function") return;
+    setGamePhase(game.inSpawnPhase() ? "spawn" : "playing");
   }
 
   fn.onGamePhaseChange = (callback) => {
@@ -258,9 +182,10 @@
   function playSpawnEntryChime(force = false) {
     if (!force && !soundEnabled("spawnEntry")) return;
     try {
-      // Small ready cue before the match starts.
-      playTone({ type: "sine", frequency: 392, duration: 0.1, gain: 0.08, release: 0.09 });
-      playTone({ type: "triangle", frequency: 493.88, start: 0.09, duration: 0.16, gain: 0.11, release: 0.14 });
+      // Strong two-pulse ready cue, distinct from the rising match-start chime.
+      playTone({ type: "triangle", frequency: 392, duration: 0.2, gain: 0.16, release: 0.18 });
+      playTone({ type: "triangle", frequency: 523.25, start: 0.16, duration: 0.22, gain: 0.18, release: 0.2 });
+      playTone({ type: "triangle", frequency: 392, start: 0.4, duration: 0.24, gain: 0.18, release: 0.22 });
     } catch (_) {}
   }
 
@@ -716,9 +641,19 @@
   }
 
   function getMyFocusID() {
-    if (!state.myClientID) return null;
-    const myPID = Number(state.clientIDToPlayerID[state.myClientID]);
-    return Number.isFinite(myPID) ? myPID : null;
+    const game = fn.getAnyGameView?.();
+    const mySmallID = Number(game?.myPlayer?.()?.smallID?.());
+    return Number.isFinite(mySmallID) ? mySmallID : null;
+  }
+
+  function announceSpawnPhaseStart() {
+    if (spawnEntryAlertPlayed) return;
+    spawnEntryAlertPlayed = true;
+    pushSoundFeedEvent("Spawn phase started", {
+      duration: 700,
+      focusID: getMyFocusID(),
+    });
+    playSpawnEntryChime();
   }
 
   function getWorldPositionFromTile(tileRef) {
@@ -738,6 +673,62 @@
     } catch (_) {
       return null;
     }
+  }
+
+  function publishBoatLandingIndicators(game, updates) {
+    if (!game || !updates) return;
+    const myPID = Number(game.myPlayer?.()?.smallID?.());
+    if (!Number.isFinite(myPID) || myPID <= 0) return;
+
+    const unitUpdates = Array.isArray(
+      updates[constants.GAME_UPDATE_TYPE.UNIT],
+    )
+      ? updates[constants.GAME_UPDATE_TYPE.UNIT]
+      : [];
+    const landedTransports = unitUpdates.filter(
+      (entry) =>
+        entry &&
+        entry.unitType === "Transport" &&
+        Number(entry.ownerID) === myPID &&
+        entry.isActive === false &&
+        entry.targetTile != null &&
+        Number(entry.pos) === Number(entry.targetTile),
+    );
+    if (!landedTransports.length) return;
+
+    const now = Date.now();
+    state.boatLandingIndicators = state.boatLandingIndicators.filter(
+      (indicator) => indicator.expiresAt > now,
+    );
+
+    for (const entry of landedTransports) {
+      const unitID = Number(entry.id);
+      if (
+        Number.isFinite(unitID) &&
+        state.seenBoatLandingIndicatorUnitIds.has(unitID)
+      ) {
+        continue;
+      }
+
+      const position = getWorldPositionFromTile(
+        entry.pos != null ? entry.pos : entry.lastPos,
+      );
+      if (!position) continue;
+
+      if (Number.isFinite(unitID)) {
+        state.seenBoatLandingIndicatorUnitIds.add(unitID);
+      }
+      state.boatLandingIndicatorSequence += 1;
+      state.boatLandingIndicators.push({
+        id: state.boatLandingIndicatorSequence,
+        unitID: Number.isFinite(unitID) ? unitID : null,
+        x: position.x,
+        y: position.y,
+        expiresAt: now + BOAT_LANDING_INDICATOR_MS,
+      });
+    }
+
+    writeAttribute("data-ofe-boat-landings", state.boatLandingIndicators);
   }
 
   fn.playExtensionSound = (key, force = false) => {
@@ -848,7 +839,7 @@
       } catch (_) {}
     }
 
-    return state.playerTypeBySmallId?.[numericPlayerSmallId] || null;
+    return null;
   }
 
   function isBotPlayerSmallId(playerSmallId, game = null) {
@@ -982,8 +973,7 @@
       }
       if (!pendingAttackIds.size) return;
 
-      const myTroopsNow =
-        typeof me.troops === "function" ? Number(me.troops()) : Number(state.myPlayerTroops);
+      const myTroopsNow = Number(me.troops?.());
       const minAlertTroops = Number.isFinite(myTroopsNow) && myTroopsNow > 0
         ? myTroopsNow * GROUND_ATTACK_ALERT_MIN_RATIO
         : NaN;
@@ -1040,14 +1030,13 @@
     }, 0);
   }
 
-  function maybePlayGameSounds(gu) {
+  function maybePlayGameSounds(game, gu) {
     if (!gu || gu.tick == null) {
       return;
     }
-    if (!state.myClientID) return;
     if (!anySoundsEnabled()) return;
 
-    const myPID = Number(state.clientIDToPlayerID[state.myClientID]);
+    const myPID = Number(game?.myPlayer?.()?.smallID?.());
     if (!Number.isFinite(myPID) || myPID <= 0) return;
 
     const updates = gu.updates;
@@ -1288,123 +1277,17 @@
     }
   }
 
-  function collectOwnedTilesFromLiveGame() {
-    const game = fn.getAnyGameView ? fn.getAnyGameView() : null;
-    if (!game) return null;
-    if (
-      typeof game.width !== "function" ||
-      typeof game.height !== "function" ||
-      typeof game.ownerID !== "function" ||
-      typeof game.myPlayer !== "function"
-    ) {
-      return null;
-    }
-
-    const me = game.myPlayer();
-    if (!me || typeof me.smallID !== "function") return null;
-    const mySmallID = Number(me.smallID());
-    if (!Number.isFinite(mySmallID) || mySmallID <= 0) return null;
-
-    const width = Number(game.width());
-    const height = Number(game.height());
-    if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
-      return null;
-    }
-
-    const myTilesSet = new Set();
-    const hasRefFn = typeof game.ref === "function";
-    for (let y = 0; y < height; y++) {
-      const row = y * width;
-      for (let x = 0; x < width; x++) {
-        const ref = hasRefFn ? game.ref(x, y) : row + x;
-        if (Number(game.ownerID(ref)) === mySmallID) {
-          myTilesSet.add(ref);
-        }
-      }
-    }
-
-    return { width, height, myTilesSet };
-  }
-
-  function computeConnectedComponents(width, height, tilesSet) {
-    if (!tilesSet.size) return [];
-    const visited = new Set();
-    const components = [];
-
-    for (const ref of tilesSet) {
-      if (visited.has(ref)) continue;
-      const component = [];
-      const queue = [ref];
-      visited.add(ref);
-
-      while (queue.length) {
-        const cur = queue.pop();
-        component.push(cur);
-        const cx = cur % width;
-        const neighbors = [];
-        if (cx > 0) neighbors.push(cur - 1);
-        if (cx < width - 1) neighbors.push(cur + 1);
-        if (cur >= width) neighbors.push(cur - width);
-        if (cur + width < width * height) neighbors.push(cur + width);
-        for (const n of neighbors) {
-          if (tilesSet.has(n) && !visited.has(n)) {
-            visited.add(n);
-            queue.push(n);
-          }
-        }
-      }
-
-      let sx = 0, sy = 0;
-      for (const r of component) {
-        sx += r % width;
-        sy += Math.floor(r / width);
-      }
-      components.push({
-        size: component.length,
-        centroidX: Math.round(sx / component.length),
-        centroidY: Math.round(sy / component.length),
-      });
-    }
-
-    components.sort((a, b) => b.size - a.size);
-    return components;
-  }
-
-  function navigateToPosition(x, y, instant = false) {
-    const buildMenu = document.querySelector("build-menu");
-    if (!buildMenu || !buildMenu.transformHandler) return;
-    const th = buildMenu.transformHandler;
-    if (!instant && typeof th.onGoToPosition === "function") {
-      // TransformHandler onGoToPosition expects world/tile coordinates.
-      th.onGoToPosition({ x, y });
-      return;
-    }
-
-    if (typeof th.override === "function" && typeof th.boundingRect === "function") {
-      // Fallback for older handler shapes: convert world center into offset space.
-      const rect = th.boundingRect();
-      const scale = Number(th.scale) || 1;
-      const game = fn.getAnyGameView ? fn.getAnyGameView() : null;
-      if (!game || typeof game.width !== "function" || typeof game.height !== "function") {
-        return;
-      }
-
-      const gameW = Number(game.width());
-      const gameH = Number(game.height());
-      const canvasW = Number(rect && rect.width) || gameW;
-      const canvasH = Number(rect && rect.height) || gameH;
-
-      const offsetX = x - gameW / 2 - (canvasW - gameW) / (2 * scale);
-      const offsetY = y - gameH / 2 - (canvasH - gameH) / (2 * scale);
-      th.override(offsetX, offsetY, scale);
-    }
+  function navigateToPosition(x, y) {
+    const transformHandler = fn.getNativeContext?.()?.transformHandler;
+    if (typeof transformHandler?.onGoToPosition !== "function") return false;
+    transformHandler.onGoToPosition({ x, y });
+    return true;
   }
 
   fn.navigateToPosition = navigateToPosition;
 
   function publishMarkerTransform() {
-    const buildMenu = document.querySelector("build-menu");
-    const transformHandler = buildMenu && buildMenu.transformHandler;
+    const transformHandler = fn.getNativeContext?.()?.transformHandler;
     if (
       !transformHandler ||
       typeof transformHandler.worldToScreenCoordinates !== "function"
@@ -1425,20 +1308,16 @@
         return;
       }
 
-      document.documentElement.setAttribute(
-        "data-ofe-map-transform",
-        JSON.stringify({
-          x: Number(origin.x) - window.innerWidth / 2,
-          y: Number(origin.y) - window.innerHeight / 2,
-          scale,
-        }),
-      );
+      writeAttribute("data-ofe-map-transform", {
+        x: Number(origin.x) - window.innerWidth / 2,
+        y: Number(origin.y) - window.innerHeight / 2,
+        scale,
+      });
     } catch (_) {}
   }
 
-  function publishNationMarkers(nameData) {
+  function publishNationMarkers(game) {
     const nations = {};
-    const game = fn.getAnyGameView ? fn.getAnyGameView() : null;
 
     if (game && typeof game.playerViews === "function") {
       try {
@@ -1471,33 +1350,14 @@
           nations[markerId] = { x: Number(location.x), y: Number(location.y) };
         }
 
-        if (Object.keys(nations).length > 0) {
-          document.documentElement.setAttribute("data-ofe-nations", JSON.stringify(nations));
-          return;
-        }
+        writeAttribute("data-ofe-nations", nations);
       } catch (_) {}
     }
-
-    if (!nameData) return;
-
-    for (const pid in nameData) {
-      if (state.playerTypeById[pid] !== "NATION") continue;
-      if (state.playerAliveById[pid] === false) continue;
-      const d = nameData[pid];
-      if (!d || !Number.isFinite(Number(d.x)) || !Number.isFinite(Number(d.y))) {
-        continue;
-      }
-      nations[pid] = { x: Number(d.x), y: Number(d.y) };
-    }
-
-    document.documentElement.setAttribute("data-ofe-nations", JSON.stringify(nations));
   }
 
-  function publishBuildingStackMarkers() {
-    const game = fn.getAnyGameView ? fn.getAnyGameView() : null;
+  function publishBuildingStackMarkers(game, units) {
     if (
       !game ||
-      typeof game.units !== "function" ||
       typeof game.x !== "function" ||
       typeof game.y !== "function"
     ) {
@@ -1505,13 +1365,6 @@
     }
 
     const stacks = {};
-    let units = [];
-    try {
-      units = game.units();
-    } catch (_) {
-      return;
-    }
-
     for (const unit of units) {
       try {
         const type = typeof unit.type === "function" ? unit.type() : null;
@@ -1535,446 +1388,159 @@
       } catch (_) {}
     }
 
-    document.documentElement.setAttribute(
-      "data-ofe-building-stacks",
-      JSON.stringify(stacks),
-    );
+    writeAttribute("data-ofe-building-stacks", stacks);
   }
 
-  function updateFromGameUpdate(gu) {
-    if (!gu || typeof gu !== "object" || !gu.updates) {
+  function publishTransportShipMarkers(game, units) {
+    if (
+      !game ||
+      typeof game.myPlayer !== "function" ||
+      typeof game.x !== "function" ||
+      typeof game.y !== "function"
+    ) {
       return;
     }
 
-    // Reset once at the start of a game. Player updates are partial after their
-    // first emission, so clearing this state again on ticks 2 and 3 loses the
-    // clientID-to-playerID mapping needed by inbound alerts.
-    if (gu.tick != null && gu.tick <= 3 && state.gamePhase === "none") {
-      for (const k in state.playerTypeById) delete state.playerTypeById[k];
-      for (const k in state.playerTypeBySmallId) delete state.playerTypeBySmallId[k];
-      for (const k in state.playerAliveById) delete state.playerAliveById[k];
-      for (const k in state.playerTroopsById) delete state.playerTroopsById[k];
-      for (const k in state.clientIDToPlayerID) delete state.clientIDToPlayerID[k];
-      state.seenIncomingBoatUnitIds.clear();
-      state.boatInboundAlertTickByAttacker.clear();
-      state.groundAttackTrackingReady = false;
-      state.seenIncomingGroundAttackIds.clear();
-      state.groundAttackInboundAlertTickByAttacker.clear();
-      state.neighborStatusById = {};
-      state.lastBoatLandingSoundTick = -1;
-      state.lastBoatInboundSoundTick = -1;
-      state.lastBoatDestroyedSoundTick = -1;
-      state.lastGroundAttackInboundSoundTick = -1;
-      state.lastWarshipDestroyedSoundTick = -1;
-      state.lastMirvInboundSoundTick = -1;
-      state.lastNukeInboundSoundTick = -1;
-      state.lastHydrogenInboundSoundTick = -1;
-      if (state.allianceExtensionPendingById instanceof Map) {
-        state.allianceExtensionPendingById.clear();
-      }
+    let me = null;
+    try {
+      me = game.myPlayer();
+    } catch (_) {
+      return;
     }
+    if (!me) return;
 
-    syncGamePhaseFromUpdateTick(gu.tick);
-
-    const updates = gu.updates;
-    if (updates) {
-      for (const key in updates) {
-        const arr = updates[key];
-        if (!Array.isArray(arr)) continue;
-        for (const entry of arr) {
-          if (entry.id == null) continue;
-          if (entry.playerType) state.playerTypeById[entry.id] = entry.playerType;
-          if (entry.playerType && entry.smallID != null) {
-            const smallID = Number(entry.smallID);
-            if (Number.isFinite(smallID)) {
-              state.playerTypeBySmallId[smallID] = entry.playerType;
-            }
-          }
-          if (entry.isAlive != null) state.playerAliveById[entry.id] = Boolean(entry.isAlive);
-          if (entry.troops != null) state.playerTroopsById[entry.id] = entry.troops;
-          if (entry.clientID != null) {
-            const smallID =
-              entry.smallID != null && Number.isFinite(Number(entry.smallID))
-                ? Number(entry.smallID)
-                : Number(entry.id);
-            if (Number.isFinite(smallID)) {
-              state.clientIDToPlayerID[entry.clientID] = smallID;
-            }
-          }
+    const ships = {};
+    for (const unit of units) {
+      try {
+        if (typeof unit.type !== "function" || unit.type() !== "Transport") {
+          continue;
         }
-      }
+        if (typeof unit.isActive !== "function" || !unit.isActive()) continue;
+        if (typeof unit.owner !== "function" || unit.owner() !== me) continue;
 
-      const allianceExtensionUpdates = Array.isArray(
-        updates[constants.GAME_UPDATE_TYPE.ALLIANCE_EXTENSION],
-      )
-        ? updates[constants.GAME_UPDATE_TYPE.ALLIANCE_EXTENSION]
-        : [];
-      for (const entry of allianceExtensionUpdates) {
-        if (!entry || entry.allianceID == null) continue;
-        fn.noteAllianceExtensionUpdate?.(Number(entry.allianceID), entry.playerID);
-      }
+        const tile = typeof unit.tile === "function" ? unit.tile() : null;
+        const id = typeof unit.id === "function" ? Number(unit.id()) : NaN;
+        const x = Number(game.x(tile));
+        const y = Number(game.y(tile));
+        if (!Number.isFinite(id) || !Number.isFinite(x) || !Number.isFinite(y)) {
+          continue;
+        }
+        ships[id] = { x, y };
+      } catch (_) {}
     }
 
-    maybePlayGameSounds(gu);
-
-    if (state.myClientID && state.clientIDToPlayerID[state.myClientID]) {
-      const myPID = state.clientIDToPlayerID[state.myClientID];
-      if (state.playerTroopsById[myPID] != null) {
-        state.myPlayerTroops = state.playerTroopsById[myPID];
-      }
-    }
-
-    publishNationMarkers(gu.playerNameViewData);
-    publishBuildingStackMarkers();
-    publishMarkerTransform();
-
+    writeAttribute("data-ofe-transport-ships", ships);
   }
 
-  fn.triggerTerritoryCycle = () => {
-    const live = collectOwnedTilesFromLiveGame();
-    if (!live) {
+  function publishGameMarkers(game) {
+    const now = performance.now();
+    if (now - lastMarkerPublishAt < MARKER_PUBLISH_INTERVAL_MS) return;
+    lastMarkerPublishAt = now;
+
+    let units = [];
+    try {
+      units = typeof game.units === "function" ? game.units() : [];
+    } catch (_) {}
+
+    publishNationMarkers(game);
+    publishBuildingStackMarkers(game, units);
+    publishTransportShipMarkers(game, units);
+    publishMarkerTransform();
+  }
+
+  function resetPerGameState() {
+    lastMarkerPublishAt = -Infinity;
+    state.seenIncomingBoatUnitIds.clear();
+    state.seenBoatLandingIndicatorUnitIds.clear();
+    state.boatLandingIndicators = [];
+    state.boatLandingIndicatorSequence = 0;
+    state.boatInboundAlertTickByAttacker.clear();
+    state.groundAttackTrackingReady = false;
+    state.seenIncomingGroundAttackIds.clear();
+    state.groundAttackInboundAlertTickByAttacker.clear();
+    state.neighborStatusById = {};
+    state.lastBoatLandingSoundTick = -1;
+    state.lastBoatInboundSoundTick = -1;
+    state.lastBoatDestroyedSoundTick = -1;
+    state.lastGroundAttackInboundSoundTick = -1;
+    state.lastWarshipDestroyedSoundTick = -1;
+    state.lastMirvInboundSoundTick = -1;
+    state.lastNukeInboundSoundTick = -1;
+    state.lastHydrogenInboundSoundTick = -1;
+    state.allianceExtensionPendingById?.clear?.();
+    setGamePhase("none");
+  }
+
+  function processNativeGameTick({ game, tick, updates }) {
+    syncGamePhase(game);
+    if (!updates) return;
+
+    const allianceExtensions = Array.isArray(
+      updates[constants.GAME_UPDATE_TYPE.ALLIANCE_EXTENSION],
+    )
+      ? updates[constants.GAME_UPDATE_TYPE.ALLIANCE_EXTENSION]
+      : [];
+    for (const update of allianceExtensions) {
+      if (update?.allianceID == null) continue;
+      fn.noteAllianceExtensionUpdate?.(
+        Number(update.allianceID),
+        update.playerID,
+      );
+    }
+
+    publishBoatLandingIndicators(game, updates);
+    maybePlayGameSounds(game, { tick, updates });
+    publishGameMarkers(game);
+  }
+
+  fn.triggerShowMiniTerritories = () => {
+    const game = fn.getAnyGameView?.();
+    const minis = fn.findMiniTerritories?.(game, 40);
+    if (!minis) {
       fn.pushBottomRightLog("No game data available.", undefined, {
         focusID: getMyFocusID(),
       });
       return;
     }
 
-    const { width, height, myTilesSet } = live;
-    const components = computeConnectedComponents(width, height, myTilesSet);
-    const smallComponents = components.filter((component) => component.size <= 100);
-
-    if (!smallComponents.length) {
+    if (!minis.length) {
+      document.documentElement.removeAttribute("data-ofe-mini-territories");
       fn.pushBottomRightLog("No mini territories.", undefined, {
         focusID: getMyFocusID(),
       });
       return;
     }
 
-    state.territoryCycleIndex =
-      (state.territoryCycleIndex + 1) % smallComponents.length;
-    const target = smallComponents[state.territoryCycleIndex];
-    navigateToPosition(target.centroidX, target.centroidY, true);
-    console.log(
-      `[OFE] Switched to territory ${state.territoryCycleIndex + 1}/${smallComponents.length} (${target.size} tiles)`,
+    const expiresAt = Date.now() + MINI_TERRITORY_MARKER_MS;
+    writeAttribute(
+      "data-ofe-mini-territories",
+      minis.map((mini, index) => ({
+        id: index + 1,
+        ...mini,
+        expiresAt,
+      })),
     );
   };
 
-  function getLiveMyPlayerTroops() {
-    const sources = [
-      "control-panel",
-      "player-panel",
-      "events-display",
-      "chat-modal",
-      "emoji-table",
-    ];
-
-    for (const selector of sources) {
-      const el = document.querySelector(selector);
-      if (!el) continue;
-      const game = el.game || el.g;
-      if (!game || typeof game.myPlayer !== "function") continue;
-      const me = game.myPlayer();
-      if (!me || typeof me.troops !== "function") continue;
-      const troops = Number(me.troops());
-      if (Number.isFinite(troops) && troops > 0) return troops;
-    }
-
-    if (Number.isFinite(state.myPlayerTroops) && state.myPlayerTroops > 0) {
-      return state.myPlayerTroops;
-    }
-
-    return 0;
-  }
-
-  function getBoatOnePercentTroops() {
-    const troops = getLiveMyPlayerTroops();
-    return Math.max(1, Math.floor(troops * 0.01));
-  }
-
-  function readCurrentAttackRatio() {
-    const controlPanel = document.querySelector("control-panel");
-    if (controlPanel && Number.isFinite(controlPanel.attackRatio)) {
-      return Math.min(1, Math.max(0.01, Number(controlPanel.attackRatio)));
-    }
-
-    try {
-      const raw = Number(localStorage.getItem("settings.attackRatio") || "0.2");
-      if (Number.isFinite(raw)) return Math.min(1, Math.max(0.01, raw));
-    } catch (_) {}
-
-    return null;
-  }
-
-  function applyAttackRatio(ratio) {
-    const clamped = Math.min(1, Math.max(0.01, Number(ratio)));
-    let updated = false;
-
-    const controlPanel = document.querySelector("control-panel");
-    if (controlPanel) {
-      if (Number.isFinite(controlPanel.attackRatio)) {
-        try {
-          controlPanel.attackRatio = clamped;
-          updated = true;
-        } catch (_) {}
-      }
-
-      if (typeof controlPanel.onAttackRatioChange === "function") {
-        try {
-          controlPanel.onAttackRatioChange(clamped);
-          updated = true;
-        } catch (_) {}
-      }
-
-      if (typeof controlPanel.requestUpdate === "function") {
-        try {
-          controlPanel.requestUpdate();
-        } catch (_) {}
-      }
-    }
-
-    const slider =
-      document.querySelector("control-panel input[type='range']") ||
-      document.getElementById("attack-ratio");
-    if (slider && slider.tagName === "INPUT") {
-      try {
-        slider.value = String(Math.round(clamped * 100));
-        slider.dispatchEvent(new Event("input", { bubbles: true }));
-        updated = true;
-      } catch (_) {}
-    }
-
-    if (updated) {
-      try {
-        localStorage.setItem("settings.attackRatio", String(clamped));
-      } catch (_) {}
-    }
-
-    return updated;
-  }
-
-  fn.initWorkerHooks = () => {
-    if (state.workerHooksInitialized) return;
-    state.workerHooksInitialized = true;
-
-    const origAdd = EventTarget.prototype.addEventListener;
-    EventTarget.prototype.addEventListener = function (type, listener, ...rest) {
-      if (
-        type === "message" &&
-        this instanceof Worker &&
-        typeof listener === "function"
-      ) {
-        const originalListener = listener;
-        const wrapped = function (event) {
-          try {
-            const msg = event.data;
-            if (msg && msg.type === "game_update" && msg.gameUpdate) {
-              updateFromGameUpdate(msg.gameUpdate);
-            } else if (
-              msg &&
-              msg.type === "game_update_batch" &&
-              Array.isArray(msg.gameUpdates)
-            ) {
-              for (const gameUpdate of msg.gameUpdates) {
-                updateFromGameUpdate(gameUpdate);
-              }
-            }
-          } catch (_) {}
-          return originalListener.apply(this, arguments);
-        };
-
-        listener._ofeWrapped = wrapped;
-        return origAdd.call(this, type, wrapped, ...rest);
-      }
-
-      return origAdd.call(this, type, listener, ...rest);
-    };
-
-    const origRemove = EventTarget.prototype.removeEventListener;
-    EventTarget.prototype.removeEventListener = function (type, listener, ...rest) {
-      if (listener && listener._ofeWrapped) {
-        return origRemove.call(this, type, listener._ofeWrapped, ...rest);
-      }
-      return origRemove.call(this, type, listener, ...rest);
-    };
-
-    const origPostMessage = Worker.prototype.postMessage;
-    Worker.prototype.postMessage = function (msg, ...rest) {
-      try {
-        if (msg && msg.type === "init") {
-          setGamePhase("none");
-          state.spawnPhaseTurns = null;
-          cacheSpawnPhaseTurnsFromGameStartInfo(msg.gameStartInfo);
-          if (msg.clientID) {
-            state.myClientID = msg.clientID;
-          }
-        }
-      } catch (_) {}
-
-      return origPostMessage.call(this, msg, ...rest);
-    };
-
-    if (!state.markerTransformWatch) {
-      state.markerTransformWatch = window.setInterval(() => {
-        if (state.gamePhase === "spawn" || state.gamePhase === "playing") {
-          publishMarkerTransform();
-        }
-      }, 120);
-    }
+  fn.initGameHooks = () => {
+    if (state.gameHooksInitialized) return;
+    state.gameHooksInitialized = true;
+    fn.onNativeGameChange?.(() => resetPerGameState());
+    fn.onNativeGameTick?.(processNativeGameTick);
   };
 
-  fn.triggerBoatOnePercentAttack = () => {
-    if (state.boatDispatching) return;
-    if (fn.ensureEventBusHooks) fn.ensureEventBusHooks();
-
-    state.overrideNextBoat = true;
-    const attackKey = fn.getBoatAttackKey ? fn.getBoatAttackKey() : "KeyB";
-    const parsedAttackKey =
-      typeof attackKey === "string" && attackKey.startsWith("Shift+")
-        ? { code: attackKey.slice(6), shiftKey: true }
-        : { code: attackKey || "KeyB", shiftKey: false };
-    const previousRatio = readCurrentAttackRatio();
-    const ratioTemporarilySet =
-      previousRatio != null &&
-      Math.abs(previousRatio - 0.01) > 0.0001 &&
-      applyAttackRatio(0.01);
-
-    state.boatDispatching = true;
-    window.dispatchEvent(
-      new KeyboardEvent("keyup", {
-        code: parsedAttackKey.code,
-        shiftKey: parsedAttackKey.shiftKey,
-        bubbles: true,
-      }),
-    );
-    state.boatDispatching = false;
-
-    if (ratioTemporarilySet && previousRatio != null) {
-      setTimeout(() => {
-        applyAttackRatio(previousRatio);
-      }, 220);
-    }
-
-    setTimeout(() => {
-      state.overrideNextBoat = false;
-    }, BOAT_OVERRIDE_WINDOW_MS);
-  };
-
-  function isBoatAttackIntentEvent(event) {
-    if (!event || typeof event !== "object") return false;
-    if (typeof event.troops !== "number") return false;
-
-    if (event.constructor && event.constructor.name === "SendBoatAttackIntentEvent") {
-      return true;
-    }
-
-    return Object.prototype.hasOwnProperty.call(event, "dst");
-  }
-
-  function wrapEventBusEmit(eventBus) {
-    if (!eventBus || typeof eventBus.emit !== "function") return;
-    if (eventBus.__ofeEmitWrapped) return;
-
-    const originalEmit = eventBus.emit.bind(eventBus);
-    eventBus.emit = function (event) {
-      if (state.overrideNextBoat && isBoatAttackIntentEvent(event)) {
-        try {
-          event.troops = getBoatOnePercentTroops();
-          state.overrideNextBoat = false;
-        } catch (_) {}
-      }
-      return originalEmit(event);
-    };
-
-    eventBus.__ofeEmitWrapped = true;
-  }
-
-  function findEventBus() {
-    const selectors = [
-      "events-display",
-      "player-panel",
-      "chat-modal",
-      "emoji-table",
-    ];
-    for (const selector of selectors) {
-      const el = document.querySelector(selector);
-      if (!el) continue;
-      if (el.eventBus && typeof el.eventBus.emit === "function") {
-        return el.eventBus;
-      }
-    }
-    return null;
-  }
-
-  fn.ensureEventBusHooks = () => {
-    const bus = findEventBus();
-    if (!bus) return false;
-    wrapEventBusEmit(bus);
-    return true;
-  };
-
-  fn.initSocketHooks = () => {
-    if (state.socketHooksInitialized) return;
-    state.socketHooksInitialized = true;
-    if (!(state.gameSockets instanceof Set)) {
-      state.gameSockets = new Set();
-    }
-
-    const eventBusScan = setInterval(() => {
-      if (fn.ensureEventBusHooks && fn.ensureEventBusHooks()) {
-        clearInterval(eventBusScan);
-      }
-    }, 1000);
-
-    const origWsSend = WebSocket.prototype.send;
-    WebSocket.prototype.send = function (data) {
-      if (state.gameSockets instanceof Set) {
-        state.gameSockets.add(this);
-      }
-      if (typeof data === "string") {
-        try {
-          const msg = JSON.parse(data);
-          if (
-            msg &&
-            (msg.type === "intent" ||
-              msg.type === "join" ||
-              msg.type === "rejoin" ||
-              msg.type === "ping")
-          ) {
-            state.latestGameSocket = this;
-          }
-          if (
-            msg &&
-            msg.type === "intent" &&
-            msg.intent &&
-            msg.intent.type === "allianceExtension"
-          ) {
-            fn.noteAllianceExtensionIntent?.(Number(msg.intent.recipient));
-          }
-        } catch (_) {}
-      }
-
-      if (state.overrideNextBoat && typeof data === "string") {
-        try {
-          const msg = JSON.parse(data);
-          if (msg.type === "intent" && msg.intent && msg.intent.type === "boat") {
-            msg.intent.troops = getBoatOnePercentTroops();
-            state.overrideNextBoat = false;
-            return origWsSend.call(this, JSON.stringify(msg));
-          }
-        } catch (_) {}
-      }
-
-      return origWsSend.call(this, data);
-    };
-  };
+  document.addEventListener("game-starting", () => {
+    // OpenFront emits this before map and worker initialization, so a hidden
+    // tab gets its alert before tick processing can fall behind.
+    spawnEntryAlertPlayed = false;
+    announceSpawnPhaseStart();
+  });
 
   fn.onGamePhaseChange((oldPhase, newPhase) => {
     if (oldPhase !== "spawn" && newPhase === "spawn") {
-      pushSoundFeedEvent("Spawn phase started", {
-        duration: 700,
-        focusID: getMyFocusID(),
-      });
-      playSpawnEntryChime();
+      // Keep tick detection as a fallback for game versions that do not emit
+      // the early lifecycle event.
+      announceSpawnPhaseStart();
     }
     if (oldPhase === "spawn" && newPhase === "playing") {
       pushSoundFeedEvent("Match started", {
@@ -1982,6 +1548,7 @@
         focusID: getMyFocusID(),
       });
       playGameStartChime();
+      spawnEntryAlertPlayed = false;
     }
   });
 

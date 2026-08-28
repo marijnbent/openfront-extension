@@ -12,9 +12,10 @@
   if (!ns || !ns.fn || ns.__bootstrapped) return;
   ns.__bootstrapped = true;
 
+  ns.fn.initNativeRuntime?.();
+  ns.fn.initBuildMultiplier?.();
   ns.fn.initPointerTracking?.();
-  ns.fn.initWorkerHooks?.();
-  ns.fn.initSocketHooks?.();
+  ns.fn.initGameHooks?.();
   ns.fn.initNeighborWatch?.();
   ns.fn.initShortcutHandlers?.();
   ns.fn.initSettingsIntegration?.();

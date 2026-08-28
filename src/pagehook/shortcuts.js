@@ -52,8 +52,8 @@
         e.preventDefault();
 
         switch (action) {
-          case "territoryCycle": {
-            if (fn.triggerTerritoryCycle) fn.triggerTerritoryCycle();
+          case "showMiniTerritories": {
+            if (fn.triggerShowMiniTerritories) fn.triggerShowMiniTerritories();
             break;
           }
           case "chatSearch": {

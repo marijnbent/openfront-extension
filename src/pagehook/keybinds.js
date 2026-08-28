@@ -29,10 +29,13 @@
       attackRatioUp: "KeyY",
       boatAttack: "KeyB",
       groundAttack: "KeyG",
+      retaliateAttack: "Shift+KeyR",
       requestAlliance: "KeyK",
       breakAlliance: "KeyL",
       swapDirection: "KeyU",
-      modifierKey: isMac ? "MetaLeft" : "ControlLeft",
+      buildMenuModifier: isMac ? "MetaLeft" : "ControlLeft",
+      emojiMenuModifier: "AltLeft",
+      boxSelectWarships: "ShiftLeft",
       altKey: "AltLeft",
       shiftKey: "ShiftLeft",
       buildCity: "Digit1",
@@ -103,6 +106,11 @@
     try {
       const parsed = JSON.parse(localStorage.getItem(EXT_KEYBINDS_STORAGE_KEY) || "{}");
       if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+      if (parsed.territoryCycle && !parsed.showMiniTerritories) {
+        parsed.showMiniTerritories = parsed.territoryCycle;
+        delete parsed.territoryCycle;
+        localStorage.setItem(EXT_KEYBINDS_STORAGE_KEY, JSON.stringify(parsed));
+      }
       return parsed;
     } catch (_) {
       return {};
@@ -133,6 +141,7 @@
       key: typeof keyLabel === "string" ? keyLabel : "",
     };
     localStorage.setItem(EXT_KEYBINDS_STORAGE_KEY, JSON.stringify(raw));
+    fn.renderShortcutPanel?.();
   }
 
   function getDefaultExtensionSettings() {

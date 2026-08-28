@@ -1,11 +1,25 @@
 /*
  * OpenFront Enhanced — Content Styles
  *
- * Game markers for nations and high-level building stacks.
+ * Game markers for nations, building stacks, and transport ships.
  */
 
-#ofe-dot-container div {
-  will-change: left, top, opacity;
+#ofe-dot-container [data-ofe-marker-kind="boat-landing"] {
+  animation: ofe-boat-landing-flash 700ms ease-in-out infinite alternate;
+}
+
+@keyframes ofe-boat-landing-flash {
+  from {
+    opacity: 0.62;
+    filter: drop-shadow(0 0 4px rgba(245, 158, 11, 0.75))
+      drop-shadow(0 1px 2px rgba(0, 0, 0, 0.85));
+  }
+
+  to {
+    opacity: 1;
+    filter: drop-shadow(0 0 11px rgba(250, 204, 21, 1))
+      drop-shadow(0 1px 2px rgba(0, 0, 0, 0.9));
+  }
 }
 
 body > div[style*="position: fixed"][style*="left: 50%"][style*="top: 50%"][style*="z-index: 4"],

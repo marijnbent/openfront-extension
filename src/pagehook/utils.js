@@ -129,8 +129,7 @@
   };
 
   fn.getCurrentCameraTarget = () => {
-    const buildMenu = document.querySelector("build-menu");
-    const th = buildMenu && buildMenu.transformHandler;
+    const th = fn.getNativeContext?.()?.transformHandler;
     if (!th || typeof th.boundingRect !== "function") return null;
 
     const rect = th.boundingRect();
@@ -182,7 +181,7 @@
       return true;
     }
 
-    const eventsDisplay = document.querySelector("events-display");
+    const eventsDisplay = fn.getNativeContext?.()?.eventsDisplay;
     const game = fn.getAnyGameView ? fn.getAnyGameView() : null;
 
     const unitView =
@@ -261,7 +260,7 @@
   };
 
   fn.pushBottomRightEvent = (event) => {
-    const eventsDisplay = document.querySelector("events-display");
+    const eventsDisplay = fn.getNativeContext?.()?.eventsDisplay;
     if (!eventsDisplay || !event || !event.description) return;
 
     const createdAt =
@@ -352,17 +351,7 @@
   };
 
   fn.getAnyGameView = () => {
-    const eventsDisplay = document.querySelector("events-display");
-    if (eventsDisplay && eventsDisplay.game) return eventsDisplay.game;
-
-    const selectors = ["control-panel", "player-panel", "chat-modal", "emoji-table"];
-    for (const selector of selectors) {
-      const el = document.querySelector(selector);
-      if (!el) continue;
-      if (el.game) return el.game;
-      if (el.g) return el.g;
-    }
-    return null;
+    return fn.getNativeContext?.()?.game || null;
   };
 
   fn.initPointerTracking = () => {

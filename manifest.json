@@ -25,6 +25,9 @@
         "src/pagehook/constants.js",
         "src/pagehook/native-overrides.js",
         "src/pagehook/utils.js",
+        "src/pagehook/native-runtime.js",
+        "src/pagehook/territories.js",
+        "src/pagehook/build-multiplier.js",
         "src/pagehook/keybinds.js",
         "src/pagehook/settings-ui.js",
         "src/pagehook/shortcut-panel.js",
@@ -34,6 +37,7 @@
         "src/pagehook/emoji-priority.js",
         "src/pagehook/emoji-search.js",
         "src/pagehook/game-hooks.js",
+        "src/pagehook/boat-one-percent.js",
         "src/pagehook/neighbor-watch.js",
         "src/pagehook/shortcuts.js",
         "src/page-hook.js"

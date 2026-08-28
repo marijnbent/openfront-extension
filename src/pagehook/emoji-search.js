@@ -23,17 +23,6 @@
     return Array.from(emojiTable.querySelectorAll(".grid button"));
   }
 
-  function findEmojiIndex(emoji) {
-    const buttons = getEmojiButtons();
-    for (let index = 0; index < buttons.length; index++) {
-      const text = (buttons[index].textContent || "").trim();
-      if (text === emoji) {
-        return index;
-      }
-    }
-    return -1;
-  }
-
   function emojiMatchesQuery(emoji, tokens) {
     const keywords = constants.EMOJI_KEYWORDS[emoji] || [];
     return fn.matchesAllTokens(`${emoji} ${keywords.join(" ")}`, tokens);
@@ -201,25 +190,23 @@
     };
   }
 
-  function sendEmojiIntent(recipient, emojiIndex) {
-    if (
-      !state.latestGameSocket ||
-      state.latestGameSocket.readyState !== WebSocket.OPEN
-    ) {
+  function showNativeEmojiTable(target) {
+    const playerPanel = document.querySelector("player-panel");
+    if (!playerPanel || typeof playerPanel.handleEmojiClick !== "function") {
       return false;
     }
 
+    const myPlayer = target.game.myPlayer();
+    const recipient = target.recipient === "AllPlayers"
+      ? myPlayer
+      : target.recipient;
+    if (!myPlayer || !recipient) return false;
+
     try {
-      state.latestGameSocket.send(
-        JSON.stringify({
-          type: "intent",
-          intent: {
-            type: "emoji",
-            recipient:
-              recipient === "AllPlayers" ? "AllPlayers" : recipient.id(),
-            emoji: emojiIndex,
-          },
-        }),
+      playerPanel.handleEmojiClick(
+        { stopPropagation() {} },
+        myPlayer,
+        recipient,
       );
       return true;
     } catch (_) {
@@ -244,25 +231,12 @@
 
     hideEmojiSearchPalette();
 
-    emojiTable.showTable((emoji) => {
-      const emojiIndex = findEmojiIndex(emoji);
-      if (emojiIndex < 0) {
-        fn.pushBottomRightLog("Could not send emoji.", undefined, { focusID: targetFocusID });
-        return;
-      }
-
-      if (!sendEmojiIntent(target.recipient, emojiIndex)) {
-        fn.pushBottomRightLog("Emoji send unavailable right now.", undefined, {
-          focusID: targetFocusID,
-        });
-        return;
-      }
-
-      if (typeof emojiTable.hideTable === "function") {
-        emojiTable.hideTable();
-      }
-      hideEmojiSearchPalette();
-    });
+    if (!showNativeEmojiTable(target)) {
+      fn.pushBottomRightLog("Emoji send unavailable right now.", undefined, {
+        focusID: targetFocusID,
+      });
+      return;
+    }
 
     showEmojiSearchPaletteWhenReady();
   };

@@ -18,8 +18,8 @@ Chrome extension that adds quality-of-life improvements to [openfront.io](https:
 - **Neighbor alerts** — Sleeping neighbors and traitor neighbors each have their own sound and setting.
 - **Missile alerts** — Separate alarms play for atom bombs, hydrogen bombs, and MIRVs.
 
-### Territory cycle
-- **Mini Territories cycle** — The `Mini Territories` shortcut cycles the camera through your disconnected mini territories (100 tiles or fewer), skipping the shortcut if your land is fully connected or there are no mini territories.
+### Mini territories
+- **Show Minis** — The shortcut marks every disconnected mini territory of 40 tiles or fewer for three seconds.
 
 ### Keyboard shortcuts
 
@@ -30,7 +30,7 @@ All shortcuts are rebindable in the extension's `Extension` settings tab.
 | `Z` | Chat Search | Opens chat directed at the hovered player with search |
 | `X` | Emoji Search | Opens emoji selector with keyword search |
 | `N` | Boat 1% | Sends a boat attack using only 1% of your troops |
-| `H` | Mini Territories | Jumps camera between your disconnected mini territories (100 tiles or fewer) |
+| `H` | Show Minis | Marks every disconnected mini territory (40 tiles or fewer) for three seconds |
 | `J` | Last OFE Alert | Jumps to the most recent clickable OFE alert |
 
 ### Neighbor alerts

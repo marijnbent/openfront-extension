@@ -19,7 +19,7 @@
     chatSearch: "Chat",
     emojiSearch: "Emoji",
     boatOnePercent: "Boat 1%",
-    territoryCycle: "Cycle Mini",
+    showMiniTerritories: "Show Minis",
     lastOfeAlert: "Last Alert",
   };
 
@@ -136,6 +136,42 @@
       state.shortcutPanelState.notice.appendChild(text);
     }
 
+    const multiplier = fn.getBuildMultiplier ? fn.getBuildMultiplier() : 1;
+    const multiplierColor =
+      multiplier === 10 ? "#fca5a5" : multiplier === 5 ? "#fde68a" : "#94a3b8";
+    const multiplierBorder =
+      multiplier === 10
+        ? "rgba(248,113,113,0.7)"
+        : multiplier === 5
+          ? "rgba(245,158,11,0.65)"
+          : "rgba(148,163,184,0.2)";
+
+    const multiplierRow = document.createElement("button");
+    multiplierRow.type = "button";
+    multiplierRow.title = "Toggle build amount ×1, ×5, or ×10";
+    multiplierRow.setAttribute("aria-label", `Build multiplier ×${multiplier}`);
+    multiplierRow.style.cssText =
+      "display:flex;align-items:center;gap:4px;width:100%;" +
+      "padding:3px 4px;margin-bottom:3px;border-radius:7px;cursor:pointer;" +
+      `background:rgba(15,23,42,0.7);border:1px solid ${multiplierBorder};`;
+
+    const multiplierKey = document.createElement("span");
+    multiplierKey.textContent = "\\";
+    multiplierKey.style.cssText =
+      "font-size:7px;line-height:1;border-radius:4px;padding:2px 3px;flex:0 0 auto;" +
+      "border:1px solid rgba(148,163,184,0.45);background:rgba(15,23,42,0.95);color:#e2e8f0;";
+
+    const multiplierName = document.createElement("span");
+    multiplierName.textContent = `Build ×${multiplier}`;
+    multiplierName.style.cssText =
+      `font-size:8px;font-weight:${multiplier === 1 ? "600" : "800"};` +
+      `color:${multiplierColor};white-space:nowrap;`;
+
+    multiplierRow.appendChild(multiplierKey);
+    multiplierRow.appendChild(multiplierName);
+    multiplierRow.addEventListener("click", () => fn.toggleBuildMultiplier?.());
+    statusEl.appendChild(multiplierRow);
+
     for (const meta of Object.values(constants.EXT_SHORTCUTS)) {
       const diag = diagnostics.byAction[meta.action];
       if (!diag) continue;
@@ -205,20 +241,26 @@
     updatePanelPlacement();
   }
 
+  fn.renderShortcutPanel = renderShortcutPanel;
+
   fn.initShortcutPanel = () => {
     if (state.shortcutPanelState) return;
 
     const toggle = document.createElement("button");
     toggle.type = "button";
     toggle.id = "ofe-shortcuts-toggle";
-    toggle.textContent = "Shortcuts";
+    toggle.innerHTML =
+      '<svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' +
+      '<rect x="3" y="5" width="18" height="14" rx="2"/>' +
+      '<path d="M7 9h.01M11 9h.01M15 9h.01M18 9h.01M7 13h.01M11 13h.01M15 13h.01M7 16h10"/>' +
+      "</svg>";
     toggle.title = "Show shortcuts";
     toggle.setAttribute("aria-label", "Show shortcuts");
     toggle.style.cssText =
       "position:fixed;left:12px;top:50%;z-index:10030;transform:translateY(-50%);" +
-      "height:26px;padding:0 10px;border-radius:8px;border:1px solid rgba(148,163,184,0.22);" +
+      "width:30px;height:30px;padding:0;border-radius:8px;border:1px solid rgba(148,163,184,0.22);" +
       "background:rgba(9,14,24,0.94);color:#e2e8f0;box-shadow:0 8px 24px rgba(0,0,0,0.34);" +
-      "backdrop-filter:blur(3px);font-size:11px;font-weight:700;" +
+      "backdrop-filter:blur(3px);" +
       "display:flex;align-items:center;justify-content:center;" +
       "cursor:pointer;display:none;";
 
@@ -304,6 +346,6 @@
     setShortcutPanelVisible(readPanelVisibleSetting());
     renderShortcutPanel();
 
-    state.shortcutPanelWatch = setInterval(renderShortcutPanel, 1000);
+    document.addEventListener("change", renderShortcutPanel, true);
   };
 })();

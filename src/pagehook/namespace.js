@@ -8,14 +8,11 @@
 
   if (!ns.state) {
     ns.state = {
-      // Worker-derived runtime game state
-      playerTypeById: {},
-      playerTypeBySmallId: {},
-      playerAliveById: {},
-      myPlayerTroops: 0,
-      myClientID: null,
-      playerTroopsById: {},
-      clientIDToPlayerID: {},
+      // Native OpenFront runtime
+      nativeGame: null,
+      lastNativeTick: null,
+      nativeTickListeners: new Set(),
+      nativeGameChangeListeners: new Set(),
 
       // Pointer position for hover-driven shortcuts
       lastMouseX: window.innerWidth / 2,
@@ -27,10 +24,6 @@
       emojiSearchState: null,
       emojiSearchWatch: null,
 
-      // Network/socket tracking
-      latestGameSocket: null,
-      gameSockets: new Set(),
-      overrideNextBoat: false,
       boatDispatching: false,
       seenIncomingBoatUnitIds: new Set(),
       boatInboundAlertTickByAttacker: new Map(),
@@ -38,6 +31,9 @@
       seenIncomingGroundAttackIds: new Set(),
       groundAttackInboundAlertTickByAttacker: new Map(),
       lastBoatLandingSoundTick: -1,
+      seenBoatLandingIndicatorUnitIds: new Set(),
+      boatLandingIndicators: [],
+      boatLandingIndicatorSequence: 0,
       lastBoatInboundSoundTick: -1,
       lastBoatDestroyedSoundTick: -1,
       lastGroundAttackInboundSoundTick: -1,
@@ -46,17 +42,12 @@
       lastNukeInboundSoundTick: -1,
       lastHydrogenInboundSoundTick: -1,
 
-      // Territory cycle
-      territoryCycleIndex: 0,
-
       // Info panel
       shortcutPanelState: null,
-      shortcutPanelWatch: null,
       alliancePanelState: null,
-      alliancePanelWatch: null,
       allianceExtensionPendingById: new Map(),
       eventsPanelState: null,
-      eventsPanelWatch: null,
+      eventsPanelInitialized: false,
       lastOfeAlertTarget: null,
       lastOfeAlertSequence: 0,
       lastOfeAlertJumpSequence: 0,
@@ -65,7 +56,7 @@
       extensionSettingsCache: null,
 
       // Neighbor status monitor
-      neighborWatchInterval: null,
+      neighborWatchInitialized: false,
       neighborWatchBusy: false,
       neighborStatusById: {},
 
@@ -74,8 +65,6 @@
 
       // Game phase tracking
       gamePhase: "none",
-      spawnPhaseTurns: null,
-      markerTransformWatch: null,
     };
   }
 

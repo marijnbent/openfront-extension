@@ -17,6 +17,8 @@
   const PANEL_Z_INDEX = 190;
   const lastSeenAlliances = new Map();
   const recentlyExpiredAlliances = new Map();
+  const nativeRenewActions = new Map();
+  const ignoredRenewals = new Map();
 
   function readHiddenSetting() {
     try {
@@ -46,59 +48,66 @@
     return state.allianceExtensionPendingById;
   }
 
-  function resolveOpenGameSocket() {
-    if (
-      state.latestGameSocket &&
-      state.latestGameSocket.readyState === WebSocket.OPEN
-    ) {
-      return state.latestGameSocket;
-    }
+  function syncNativeRenewals() {
+    const actionableEvents = document.querySelector("actionable-events");
+    if (!actionableEvents || !Array.isArray(actionableEvents.events)) return 0;
 
-    if (state.gameSockets instanceof Set) {
-      for (const socket of state.gameSockets) {
-        if (socket && socket.readyState === WebSocket.OPEN) {
-          state.latestGameSocket = socket;
-          return socket;
-        }
+    const remainingEvents = [];
+    let removedCount = 0;
+
+    for (const event of actionableEvents.events) {
+      const allianceId = Number(event?.allianceID);
+      if (!Number.isFinite(allianceId)) {
+        remainingEvents.push(event);
+        continue;
       }
+
+      const renewButton = Array.isArray(event.buttons)
+        ? event.buttons.find(
+            (button) =>
+              button &&
+              button.className === "btn" &&
+              typeof button.action === "function",
+          )
+        : null;
+      if (renewButton) {
+        nativeRenewActions.set(allianceId, renewButton.action);
+      }
+      removedCount += 1;
     }
 
-    return null;
+    if (removedCount > 0) {
+      actionableEvents.events = remainingEvents;
+      actionableEvents.requestUpdate?.();
+    }
+
+    return removedCount;
   }
 
-  function findLiveEventBus() {
-    const selectors = [
-      "events-display",
-      "player-panel",
-      "build-menu",
-      "chat-modal",
-      "emoji-table",
-    ];
-    for (const selector of selectors) {
-      const el = document.querySelector(selector);
-      if (!el || !el.eventBus || typeof el.eventBus.emit !== "function") continue;
-      return el.eventBus;
-    }
-    return null;
-  }
+  function findNativeRenewAction(allianceId) {
+    const actionableEvents = document.querySelector("actionable-events");
+    if (!actionableEvents) return null;
 
-  function findEventBusConstructor(eventBus, constructorName) {
-    if (!eventBus || !eventBus.listeners || typeof eventBus.listeners.keys !== "function") {
-      return null;
-    }
+    const numericAllianceId = Number(allianceId);
+    syncNativeRenewals();
+    let action = nativeRenewActions.get(numericAllianceId) || null;
+    if (action) return action;
 
+    // A dismissed OpenFront prompt can still be renewed from this panel.
+    // Let OpenFront rebuild that prompt so its native transport owns encoding.
     try {
-      for (const ctor of eventBus.listeners.keys()) {
-        if (
-          typeof ctor === "function" &&
-          ctor.name === constructorName
-        ) {
-          return ctor;
-        }
+      if (
+        actionableEvents.alliancesCheckedAt instanceof Map &&
+        typeof actionableEvents.checkForAllianceExpirations === "function"
+      ) {
+        actionableEvents.alliancesCheckedAt.delete(numericAllianceId);
+        actionableEvents.checkForAllianceExpirations();
+        syncNativeRenewals();
+        action = nativeRenewActions.get(numericAllianceId) || null;
       }
     } catch (_) {}
 
-    return null;
+    return action;
   }
 
   function getExtensionWindowTicks(game) {
@@ -187,31 +196,26 @@
     getPendingRenewals().delete(Number(allianceId));
   }
 
+  function isAllianceRenewalIgnored(allianceId, expiresAt) {
+    const numericAllianceId = Number(allianceId);
+    const ignoredExpiresAt = ignoredRenewals.get(numericAllianceId);
+    if (ignoredExpiresAt == null) return false;
+    if (Number(ignoredExpiresAt) === Number(expiresAt)) return true;
+    ignoredRenewals.delete(numericAllianceId);
+    return false;
+  }
+
+  function ignoreAllianceRenewal(allianceId, expiresAt) {
+    const numericAllianceId = Number(allianceId);
+    if (!Number.isFinite(numericAllianceId)) return;
+    ignoredRenewals.set(numericAllianceId, Number(expiresAt));
+    nativeRenewActions.delete(numericAllianceId);
+  }
+
   function sendAllianceExtension(recipientId, recipientName, allianceId) {
     const recipientFocusID = fn.resolvePlayerSmallID?.(recipientId);
-    const game = fn.getAnyGameView ? fn.getAnyGameView() : null;
-    const eventBus = findLiveEventBus();
-
-    if (game && typeof game.player === "function" && eventBus) {
-      try {
-        const recipient = game.player(recipientId);
-        const SendAllianceExtensionIntentEvent = findEventBusConstructor(
-          eventBus,
-          "SendAllianceExtensionIntentEvent",
-        );
-        if (recipient && SendAllianceExtensionIntentEvent) {
-          eventBus.emit(new SendAllianceExtensionIntentEvent(recipient));
-          markAllianceRenewPending(allianceId, recipientId);
-          fn.pushBottomRightLog?.(`Renewal requested for ${recipientName}`, undefined, {
-            focusID: recipientFocusID,
-          });
-          return true;
-        }
-      } catch (_) {}
-    }
-
-    const socket = resolveOpenGameSocket();
-    if (!socket) {
+    const nativeRenew = findNativeRenewAction(allianceId);
+    if (!nativeRenew) {
       fn.pushBottomRightLog?.("Alliance renew unavailable right now.", undefined, {
         focusID: recipientFocusID,
       });
@@ -219,15 +223,7 @@
     }
 
     try {
-      socket.send(
-        JSON.stringify({
-          type: "intent",
-          intent: {
-            type: "allianceExtension",
-            recipient: recipientId,
-          },
-        }),
-      );
+      nativeRenew();
       markAllianceRenewPending(allianceId, recipientId);
       fn.pushBottomRightLog?.(`Renewal requested for ${recipientName}`, undefined, {
         focusID: recipientFocusID,
@@ -247,6 +243,12 @@
       if (!validIds.has(allianceId)) {
         pendingRenewals.delete(allianceId);
       }
+    }
+    for (const allianceId of nativeRenewActions.keys()) {
+      if (!validIds.has(allianceId)) nativeRenewActions.delete(allianceId);
+    }
+    for (const allianceId of ignoredRenewals.keys()) {
+      if (!validIds.has(allianceId)) ignoredRenewals.delete(allianceId);
     }
   }
 
@@ -274,16 +276,23 @@
           ? 1
           : 0;
     const hasExtensionRequest = getPendingRenewals().has(Number(alliance.id));
+    const isIgnored = isAllianceRenewalIgnored(alliance.id, alliance.expiresAt);
     const canAsk =
       inExtensionWindow &&
       remainingTicks > 0 &&
-      !hasExtensionRequest;
+      !hasExtensionRequest &&
+      !isIgnored;
     const otherName =
       fn.getPlayerDisplayName?.(other) ||
       (typeof other.displayName === "function" ? String(other.displayName() || "") : "") ||
       `#${alliance.other}`;
 
-    const phase = remainingTicks <= 0 ? "expired" : inExtensionWindow ? "renew" : "normal";
+    const phase =
+      remainingTicks <= 0
+        ? "expired"
+        : inExtensionWindow && !isIgnored
+          ? "renew"
+          : "normal";
     const fillFraction =
       phase === "renew"
         ? Math.max(0, Math.min(1, remainingTicks / extensionWindowTicks))
@@ -292,6 +301,8 @@
     let statusText = `${formatTicksAsClock(remainingTicks)} left`;
     if (hasExtensionRequest && remainingTicks > 0) {
       statusText = `${statusText} · pending`;
+    } else if (isIgnored && remainingTicks > 0) {
+      statusText = `${statusText} · ignored`;
     } else if (remainingTicks <= 0) {
       statusText = "Expired";
     }
@@ -305,10 +316,12 @@
       statusText,
       phase,
       fillFraction,
-      warmupFraction,
-      flashDanger: remainingTicks > 0 && remainingTicks <= FLASH_WARNING_TICKS,
+      warmupFraction: isIgnored ? 0 : warmupFraction,
+      flashDanger:
+        !isIgnored && remainingTicks > 0 && remainingTicks <= FLASH_WARNING_TICKS,
       canAsk,
       hasExtensionRequest,
+      isIgnored,
       sortValue: remainingTicks,
     };
   }
@@ -441,8 +454,12 @@
     return blendRowColor([7, 12, 20], [154, 52, 18], row.warmupFraction, 0.82);
   }
 
-  function buildActionButton(row) {
+  function buildActionButtons(row) {
     if (row.phase === "normal" || row.phase === "expired") return null;
+
+    const actions = document.createElement("div");
+    actions.style.cssText =
+      "position:relative;z-index:1;display:flex;align-items:center;gap:5px;flex:0 0 auto;";
 
     const action = document.createElement("button");
     action.type = "button";
@@ -479,7 +496,26 @@
         renderAlliancePanel();
       }
     });
-    return action;
+
+    actions.appendChild(action);
+    if (row.canAsk) {
+      const ignore = document.createElement("button");
+      ignore.type = "button";
+      ignore.textContent = "Ignore";
+      ignore.title = `Ignore this renewal for ${row.name}`;
+      ignore.style.cssText =
+        "height:24px;padding:0 7px;border-radius:7px;" +
+        "border:1px solid rgba(96,165,250,0.5);background:rgba(30,64,175,0.72);" +
+        "color:#dbeafe;font-size:11px;font-weight:600;cursor:pointer;";
+      ignore.addEventListener("click", (event) => {
+        event.stopPropagation();
+        ignoreAllianceRenewal(row.allianceId, row.expiresAt);
+        renderAlliancePanel();
+      });
+      actions.appendChild(ignore);
+    }
+
+    return actions;
   }
 
   function buildRow(row) {
@@ -520,7 +556,7 @@
     copy.appendChild(name);
     copy.appendChild(meta);
 
-    const action = buildActionButton(row);
+    const actions = buildActionButtons(row);
 
     const activateFocus = () => focusAlliancePlayer(row);
     item.addEventListener("click", activateFocus);
@@ -531,7 +567,7 @@
     });
 
     item.appendChild(copy);
-    if (action) item.appendChild(action);
+    if (actions) item.appendChild(actions);
     return item;
   }
 
@@ -767,11 +803,18 @@
     window.addEventListener("touchend", releaseAlliancePanelInteraction, true);
     window.addEventListener("touchcancel", releaseAlliancePanelInteraction, true);
 
+    syncNativeRenewals();
     renderAlliancePanel();
-
-    if (state.alliancePanelWatch) {
-      clearInterval(state.alliancePanelWatch);
-    }
-    state.alliancePanelWatch = window.setInterval(renderAlliancePanel, 250);
+    fn.onNativeGameTick?.(({ tick }) => {
+      // OpenFront adds its renewal card later in the same renderer tick.
+      // Remove it before Lit renders the queued update.
+      queueMicrotask(syncNativeRenewals);
+      if (tick % 5 === 0) renderAlliancePanel();
+    });
+    fn.onNativeGameChange?.(() => {
+      nativeRenewActions.clear();
+      ignoredRenewals.clear();
+      renderAlliancePanel();
+    });
   };
 })();
