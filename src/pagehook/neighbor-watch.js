@@ -82,7 +82,7 @@
   }
 
   function notifyNeighborChange(player, kind) {
-    if (!fn.pushBottomRightEvent) return;
+    if (kind === "betrayed") fn.notePlayerBetrayal?.(player);
     const smallID = typeof player.smallID === "function" ? player.smallID() : null;
     const colored = playerNameHtml(player);
     const description =
@@ -90,7 +90,7 @@
         ? `${colored} is sleeping`
         : `${colored} betrayed and is now traitor`;
 
-    fn.pushBottomRightEvent({
+    fn.pushBottomRightEvent?.({
       description,
       type: constants.MESSAGE_TYPE.CHAT,
       unsafeDescription: true,

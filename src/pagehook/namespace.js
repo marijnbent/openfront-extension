@@ -46,6 +46,7 @@
       shortcutPanelState: null,
       alliancePanelState: null,
       allianceExtensionPendingById: new Map(),
+      incomingBombs: [],
       eventsPanelState: null,
       eventsPanelInitialized: false,
       lastOfeAlertTarget: null,

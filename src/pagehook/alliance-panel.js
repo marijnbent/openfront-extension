@@ -15,10 +15,18 @@
   const FLASH_WARNING_TICKS = 10 * TICKS_PER_SECOND;
   const INTERACTION_RELEASE_DELAY_MS = 90;
   const PANEL_Z_INDEX = 190;
+  const PANEL_BASE_TOP = 84;
+  const PANEL_STACK_GAP = 8;
+  const BOMB_VISIBLE_MS = 30000;
+  const MAX_TRACKED_BOMBS = 50;
+  const BETRAYAL_VISIBLE_MS = 15000;
+  const recentBetrayals = new Map();
+  const BOMB_ROW_HEIGHTS = { atom: 34, hydrogen: 38, mirv: 40 };
   const lastSeenAlliances = new Map();
   const recentlyExpiredAlliances = new Map();
   const nativeRenewActions = new Map();
   const ignoredRenewals = new Map();
+  const animatedBombUnitIDs = new Set();
 
   function readHiddenSetting() {
     try {
@@ -212,27 +220,15 @@
     nativeRenewActions.delete(numericAllianceId);
   }
 
-  function sendAllianceExtension(recipientId, recipientName, allianceId) {
-    const recipientFocusID = fn.resolvePlayerSmallID?.(recipientId);
+  function sendAllianceExtension(recipientId, allianceId) {
     const nativeRenew = findNativeRenewAction(allianceId);
-    if (!nativeRenew) {
-      fn.pushBottomRightLog?.("Alliance renew unavailable right now.", undefined, {
-        focusID: recipientFocusID,
-      });
-      return false;
-    }
+    if (!nativeRenew) return false;
 
     try {
       nativeRenew();
       markAllianceRenewPending(allianceId, recipientId);
-      fn.pushBottomRightLog?.(`Renewal requested for ${recipientName}`, undefined, {
-        focusID: recipientFocusID,
-      });
       return true;
     } catch (_) {
-      fn.pushBottomRightLog?.("Alliance renew failed to send.", undefined, {
-        focusID: recipientFocusID,
-      });
       return false;
     }
   }
@@ -489,7 +485,7 @@
     action.addEventListener("click", (event) => {
       event.stopPropagation();
       if (!row.canAsk) return;
-      if (sendAllianceExtension(row.recipientId, row.name, row.allianceId)) {
+      if (sendAllianceExtension(row.recipientId, row.allianceId)) {
         action.disabled = true;
         action.textContent = "Pending";
         action.style.cursor = "default";
@@ -571,6 +567,103 @@
     return item;
   }
 
+  function getVisibleThreats() {
+    const cutoff = Date.now() - BOMB_VISIBLE_MS;
+    const bombs = Array.isArray(state.incomingBombs)
+      ? state.incomingBombs.filter((bomb) => bomb.createdAt >= cutoff)
+      : [];
+    state.incomingBombs = bombs.slice(-MAX_TRACKED_BOMBS);
+    const visibleUnitIDs = new Set(state.incomingBombs.map((bomb) => Number(bomb.unitID)));
+    for (const unitID of animatedBombUnitIDs) {
+      if (!visibleUnitIDs.has(unitID)) animatedBombUnitIDs.delete(unitID);
+    }
+    for (const [playerID, betrayal] of recentBetrayals) {
+      if (betrayal.createdAt < Date.now() - BETRAYAL_VISIBLE_MS) {
+        recentBetrayals.delete(playerID);
+      }
+    }
+    return [...state.incomingBombs, ...recentBetrayals.values()]
+      .sort((a, b) => b.createdAt - a.createdAt);
+  }
+
+  function getThreatRowPresentation(kind) {
+    if (kind === "traitor") {
+      return {
+        height: 34,
+        label: "Traitor",
+        accent: "#f87171",
+        badge: "background:rgba(153,27,27,0.82);border-color:rgba(252,165,165,0.3);color:#fee2e2;",
+        background: "linear-gradient(90deg,rgba(69,10,10,0.58),rgba(22,14,20,0.96))",
+      };
+    }
+    if (kind === "mirv") {
+      return {
+        height: BOMB_ROW_HEIGHTS.mirv,
+        label: "MIRV",
+        accent: "#f87171",
+        badge: "background:rgba(220,38,38,0.9);border-color:rgba(254,202,202,0.34);color:#fff;",
+        background: "linear-gradient(90deg,rgba(127,29,29,0.72),rgba(30,11,18,0.96))",
+      };
+    }
+    if (kind === "hydrogen") {
+      return {
+        height: BOMB_ROW_HEIGHTS.hydrogen,
+        label: "Hydrogen bomb",
+        accent: "#fb923c",
+        badge: "background:rgba(194,65,12,0.88);border-color:rgba(254,215,170,0.3);color:#fff;",
+        background: "linear-gradient(90deg,rgba(124,45,18,0.68),rgba(30,17,13,0.96))",
+      };
+    }
+    return {
+      height: BOMB_ROW_HEIGHTS.atom,
+      label: "Atom bomb",
+      accent: "#ef4444",
+      badge: "background:rgba(153,27,27,0.82);border-color:rgba(252,165,165,0.3);color:#fee2e2;",
+      background: "linear-gradient(90deg,rgba(69,10,10,0.58),rgba(22,14,20,0.96))",
+    };
+  }
+
+  function buildThreatRow(bomb) {
+    const presentation = getThreatRowPresentation(bomb.kind);
+    const item = document.createElement("button");
+    item.type = "button";
+    item.className = `ofe-bomb-row ofe-bomb-row--${bomb.kind}`;
+    item.style.cssText =
+      `position:relative;display:flex;align-items:center;gap:7px;width:100%;height:${presentation.height}px;` +
+      `padding:4px 8px 4px 10px;box-sizing:border-box;border:0;border-top:1px solid rgba(248,113,113,0.16);` +
+      `background:${presentation.background};color:#fecaca;text-align:left;cursor:pointer;overflow:hidden;` +
+      `box-shadow:inset 3px 0 0 ${presentation.accent};`;
+    if (bomb.kind !== "traitor" && !animatedBombUnitIDs.has(bomb.unitID)) {
+      animatedBombUnitIDs.add(bomb.unitID);
+      item.setAttribute("data-ofe-new-bomb", "true");
+    }
+
+    const badge = document.createElement("span");
+    badge.className = "ofe-bomb-badge";
+    badge.style.cssText =
+      "flex:0 0 auto;padding:2px 5px;border:1px solid;border-radius:5px;" +
+      `font-size:10px;font-weight:800;line-height:1.2;letter-spacing:0.02em;${presentation.badge}`;
+    badge.textContent = presentation.label;
+
+    const sender = document.createElement("span");
+    sender.className = "ofe-bomb-sender";
+    sender.style.cssText =
+      "min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" +
+      "font-size:11px;font-weight:650;line-height:1.2;color:#f8fafc;";
+    sender.textContent = bomb.kind === "traitor" ? bomb.senderName : `from ${bomb.senderName}`;
+
+    item.title = `Go to ${bomb.senderName}`;
+    item.setAttribute("aria-label", bomb.kind === "traitor"
+      ? `${bomb.senderName} betrayed and is now a traitor. Go to player.`
+      : `${presentation.label} from ${bomb.senderName}. Go to player.`);
+    item.addEventListener("click", () => {
+      fn.focusOfeTarget?.({ focusID: bomb.senderID }, { instant: true });
+    });
+    item.appendChild(badge);
+    item.appendChild(sender);
+    return item;
+  }
+
   function buildEmptyState() {
     const empty = document.createElement("div");
     empty.style.cssText =
@@ -578,6 +671,23 @@
       "font-size:11px;line-height:1.35;color:#94a3b8;";
     empty.textContent = "No alliances";
     return empty;
+  }
+
+  function renderThreatList(panelState, bombs) {
+    const renderKey = bombs
+      .map((bomb) => `${bomb.unitID}:${bomb.kind}:${bomb.senderID}:${bomb.senderName}:${bomb.createdAt}`)
+      .join("|");
+    if (renderKey === panelState.bombRenderKey) return;
+
+    panelState.bombRenderKey = renderKey;
+    panelState.bombCount.textContent = String(bombs.length);
+    panelState.bombList.textContent = "";
+    panelState.bombList.style.maxHeight = `${bombs
+      .slice(0, 3)
+      .reduce((height, bomb) => height + getThreatRowPresentation(bomb.kind).height, 0)}px`;
+    for (const bomb of bombs) {
+      panelState.bombList.appendChild(buildThreatRow(bomb));
+    }
   }
 
   function updateHiddenUI(hidden, hasRows, inSpawn) {
@@ -602,6 +712,31 @@
     panelState.hidden = Boolean(hidden);
     writeHiddenSetting(panelState.hidden);
     renderAlliancePanel();
+  }
+
+  function updateAlliancePanelTop() {
+    const panelState = state.alliancePanelState;
+    if (!panelState) return;
+
+    let top = PANEL_BASE_TOP;
+    const sidebar = document.querySelector("game-right-sidebar");
+    if (sidebar && typeof sidebar.getBoundingClientRect === "function") {
+      const rect = sidebar.getBoundingClientRect();
+      const viewportWidth = Number(window.innerWidth) || Infinity;
+      const isVisible =
+        Number(rect.width) > 0 &&
+        Number(rect.height) > 0 &&
+        Number(rect.right) > 0 &&
+        Number(rect.left) < viewportWidth &&
+        Number(rect.bottom) > 0;
+      if (isVisible) {
+        top = Math.max(top, Math.ceil(Number(rect.bottom) + PANEL_STACK_GAP));
+      }
+    }
+
+    const value = `${top}px`;
+    panelState.panel.style.top = value;
+    panelState.toggle.style.top = value;
   }
 
   function lockAlliancePanelInteraction() {
@@ -639,14 +774,17 @@
     const panelState = state.alliancePanelState;
     if (!panelState) return;
 
+    updateAlliancePanelTop();
+
     const game = fn.getAnyGameView ? fn.getAnyGameView() : null;
-    const rows = collectAllianceRows(game);
+    const allianceRows = collectAllianceRows(game);
+    const bombs = getVisibleThreats();
     const inSpawn =
       game && typeof game.inSpawnPhase === "function"
         ? game.inSpawnPhase()
         : state.gamePhase !== "playing";
 
-    updateHiddenUI(panelState.hidden, rows.length > 0, inSpawn);
+    updateHiddenUI(panelState.hidden, allianceRows.length > 0, inSpawn);
     if (panelState.hidden || inSpawn) return;
 
     panelState.panel.style.display = "";
@@ -658,19 +796,23 @@
     }
 
     const previousScrollTop = panelState.list.scrollTop;
-    panelState.count.textContent = String(rows.length);
+    panelState.count.textContent = String(allianceRows.length);
     panelState.list.textContent = "";
-    panelState.list.style.maxHeight = rows.length
-      ? `${Math.min(MAX_VISIBLE_ROWS, rows.length) * 51}px`
+    const rowCount = allianceRows.length;
+    panelState.list.style.maxHeight = rowCount
+      ? `${Math.min(MAX_VISIBLE_ROWS, rowCount) * 51}px`
       : "42px";
 
-    if (!rows.length) {
+    if (!rowCount) {
       panelState.list.appendChild(buildEmptyState());
     } else {
-      for (const row of rows) {
+      for (const row of allianceRows) {
         panelState.list.appendChild(buildRow(row));
       }
     }
+
+    panelState.bombSection.style.display = bombs.length ? "" : "none";
+    renderThreatList(panelState, bombs);
 
     panelState.list.scrollTop = previousScrollTop;
   }
@@ -711,13 +853,58 @@
     return true;
   };
 
+  fn.notePlayerBetrayal = (player) => {
+    const senderID = player?.smallID?.();
+    if (!Number.isInteger(senderID) || senderID <= 0) return;
+    recentBetrayals.delete(senderID);
+    recentBetrayals.set(senderID, {
+      kind: "traitor",
+      senderID,
+      senderName: fn.getPlayerDisplayName?.(player) || `#${senderID}`,
+      createdAt: Date.now(),
+    });
+    if (recentBetrayals.size > MAX_TRACKED_BOMBS) {
+      recentBetrayals.delete(recentBetrayals.keys().next().value);
+    }
+    renderAlliancePanel();
+  };
+
+  fn.noteIncomingBombs = (incoming) => {
+    if (!Array.isArray(incoming) || !incoming.length) return 0;
+    const bombsByUnit = new Map(
+      (Array.isArray(state.incomingBombs) ? state.incomingBombs : []).map(
+        (bomb) => [Number(bomb.unitID), bomb],
+      ),
+    );
+    let added = 0;
+    for (const bomb of incoming) {
+      const unitID = Number(bomb?.unitID);
+      const createdAt = Number(bomb?.createdAt);
+      if (!Number.isFinite(unitID) || !Number.isFinite(createdAt)) continue;
+      if (bombsByUnit.has(unitID)) continue;
+      added += 1;
+      bombsByUnit.set(unitID, {
+        kind: ["atom", "hydrogen", "mirv"].includes(bomb.kind) ? bomb.kind : "atom",
+        unitID,
+        senderID: Number.isFinite(Number(bomb.senderID)) ? Number(bomb.senderID) : null,
+        senderName: String(bomb.senderName || "Unknown player"),
+        createdAt,
+      });
+    }
+    state.incomingBombs = [...bombsByUnit.values()]
+      .sort((a, b) => a.createdAt - b.createdAt)
+      .slice(-MAX_TRACKED_BOMBS);
+    renderAlliancePanel();
+    return added;
+  };
+
   fn.initAlliancePanel = () => {
     if (state.alliancePanelState) return;
 
     const panel = document.createElement("section");
     panel.id = PANEL_ID;
     panel.style.cssText =
-      "position:fixed;left:12px;bottom:12px;z-index:" + PANEL_Z_INDEX + ";" +
+      `position:fixed;right:12px;top:${PANEL_BASE_TOP}px;z-index:${PANEL_Z_INDEX};` +
       "width:min(248px,calc(100vw - 24px));" +
       "background:rgba(9,14,24,0.94);border:1px solid rgba(148,163,184,0.22);" +
       "border-radius:10px;color:#e2e8f0;box-shadow:0 8px 24px rgba(0,0,0,0.34);" +
@@ -755,12 +942,31 @@
       "overflow-y:auto;overscroll-behavior:contain;" +
       "scrollbar-width:thin;scrollbar-color:rgba(148,163,184,0.45) transparent;";
 
+    const bombSection = document.createElement("section");
+    bombSection.id = "ofe-bomb-section";
+    bombSection.style.cssText = "display:none;border-top:1px solid rgba(248,113,113,0.26);";
+    const bombHeader = document.createElement("div");
+    bombHeader.style.cssText =
+      "display:flex;align-items:center;justify-content:space-between;padding:6px 8px;" +
+      "font-size:11px;font-weight:700;color:#fecaca;background:rgba(69,10,10,0.5);";
+    const bombTitle = document.createElement("span");
+    bombTitle.textContent = "Incoming threats";
+    const bombCount = document.createElement("span");
+    const bombList = document.createElement("div");
+    bombList.id = "ofe-bomb-list";
+    bombList.style.cssText =
+      "overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;";
+    bombHeader.appendChild(bombTitle);
+    bombHeader.appendChild(bombCount);
+    bombSection.appendChild(bombHeader);
+    bombSection.appendChild(bombList);
+
     const toggle = document.createElement("button");
     toggle.type = "button";
     toggle.id = TOGGLE_ID;
     toggle.textContent = "Alliances";
     toggle.style.cssText =
-      "position:fixed;left:12px;bottom:12px;z-index:" + PANEL_Z_INDEX + ";" +
+      `position:fixed;right:12px;top:${PANEL_BASE_TOP}px;z-index:${PANEL_Z_INDEX};` +
       "height:26px;padding:0 10px;" +
       "border-radius:8px;border:1px solid rgba(148,163,184,0.22);" +
       "background:rgba(9,14,24,0.94);color:#e2e8f0;box-shadow:0 8px 24px rgba(0,0,0,0.34);" +
@@ -773,6 +979,7 @@
     header.appendChild(hide);
     panel.appendChild(header);
     panel.appendChild(list);
+    panel.appendChild(bombSection);
 
     const root = document.body || document.documentElement;
     fn.installOverlayInteractionGuards?.(panel);
@@ -784,6 +991,10 @@
       panel,
       count,
       list,
+      bombSection,
+      bombCount,
+      bombList,
+      bombRenderKey: null,
       toggle,
       hidden: readHiddenSetting(),
       pointerInteractionActive: false,
@@ -802,6 +1013,7 @@
     window.addEventListener("mouseup", releaseAlliancePanelInteraction, true);
     window.addEventListener("touchend", releaseAlliancePanelInteraction, true);
     window.addEventListener("touchcancel", releaseAlliancePanelInteraction, true);
+    window.addEventListener("resize", updateAlliancePanelTop);
 
     syncNativeRenewals();
     renderAlliancePanel();
@@ -812,6 +1024,7 @@
       if (tick % 5 === 0) renderAlliancePanel();
     });
     fn.onNativeGameChange?.(() => {
+      recentBetrayals.clear();
       nativeRenewActions.clear();
       ignoredRenewals.clear();
       renderAlliancePanel();

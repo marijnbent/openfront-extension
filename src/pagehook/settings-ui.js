@@ -168,7 +168,7 @@
         `OFE keybind conflict for ${meta.label}: ${conflicts.join(", ")}`,
       );
 
-      const root = document.getElementById(ROOT_ID);
+      const root = event.currentTarget?.parentElement;
       if (root) {
         const el = root.querySelector(`setting-keybind[action="ofe.${action}"]`);
         if (el) syncSettingElementValue(el, action);
@@ -180,7 +180,7 @@
       fn.saveExtensionBinding(action, value, key);
     }
 
-    const root = document.getElementById(ROOT_ID);
+    const root = event.currentTarget?.parentElement;
     if (root) {
       const el = root.querySelector(`setting-keybind[action="ofe.${action}"]`);
       if (el) syncSettingElementValue(el, action);
@@ -200,7 +200,7 @@
     if (fn.saveExtensionSetting) {
       fn.saveExtensionSetting(key, enabled);
     }
-    const root = document.getElementById(ROOT_ID);
+    const root = event.currentTarget?.parentElement;
     if (!root) return;
     const toggle = root.querySelector(`[data-ofe-setting="${key}"]`);
     if (toggle) syncToggleValue(toggle, key);
@@ -312,11 +312,14 @@
     buildExtensionKeybindRows(root);
   }
 
-  function ensureExtensionRoot(scroll) {
-    let root = document.getElementById(ROOT_ID);
+  const modalRoots = new WeakMap();
+
+  function ensureExtensionRoot(scroll, modal) {
+    let root = modal ? modalRoots.get(modal) : document.getElementById(ROOT_ID);
     if (!root) {
       root = document.createElement("div");
-      root.id = ROOT_ID;
+      root.id = modal?.id ? `${ROOT_ID}-${modal.id}` : ROOT_ID;
+      if (modal) modalRoots.set(modal, root);
       root.className = "flex flex-col gap-2";
       buildExtensionTabContent(root);
       fn.installOverlayInteractionGuards?.(root);
@@ -356,7 +359,7 @@
 
     modal.renderBody = function (tab, ...args) {
       if (tab === EXTENSION_TAB_KEY) {
-        const root = ensureExtensionRoot(null);
+        const root = ensureExtensionRoot(null, this);
         root.style.display = "";
         root.className = "flex flex-col gap-2 p-4 lg:p-[1.4rem]";
         syncExtensionKeybindRows(root);
@@ -366,9 +369,6 @@
     };
 
     modal.__ofeSettingsPatched = true;
-    if (typeof modal.requestUpdate === "function") {
-      modal.requestUpdate();
-    }
     return true;
   }
 
@@ -536,6 +536,13 @@
     };
 
     customElements.whenDefined("user-setting").then(() => {
+      const prototype = customElements.get("user-setting")?.prototype;
+      if (patchUserSettingModal(prototype)) {
+        for (const modal of document.querySelectorAll("user-setting")) {
+          modal.requestUpdate?.();
+        }
+        return;
+      }
       if (attach()) return;
       const observer = new MutationObserver(() => {
         if (!attach()) return;

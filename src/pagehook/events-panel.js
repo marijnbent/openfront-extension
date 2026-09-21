@@ -4,10 +4,16 @@
   const ns = window.__OFE;
   if (!ns) return;
 
-  const { state, fn } = ns;
+  const { state, constants, fn } = ns;
   const FILTER_KEY = "ofe.events.panel.hidden";
   const BUTTON_ID = "ofe-events-filter-toggle";
   const MARKER = "\u2063\u2064\u2063";
+  const MOVED_EVENT_TYPES = new Set([
+    constants.MESSAGE_TYPE.RENEW_ALLIANCE,
+    constants.MESSAGE_TYPE.MIRV_INBOUND,
+    constants.MESSAGE_TYPE.NUKE_INBOUND,
+    constants.MESSAGE_TYPE.HYDROGEN_BOMB_INBOUND,
+  ]);
 
   function readHiddenSetting() {
     try {
@@ -51,6 +57,16 @@
       holder.textContent = String(event.description || "");
     }
     return String(holder.textContent || "").trim();
+  }
+
+  function removeMovedEvents(eventsDisplay) {
+    if (!Array.isArray(eventsDisplay.events)) return;
+    const events = eventsDisplay.events.filter(
+      (event) => !MOVED_EVENT_TYPES.has(event?.type),
+    );
+    if (events.length === eventsDisplay.events.length) return;
+    eventsDisplay.events = events;
+    eventsDisplay.requestUpdate?.();
   }
 
   function bindOfeRowInteraction(row, event) {
@@ -124,6 +140,7 @@
     const eventsDisplay = document.querySelector("events-display");
     if (!eventsDisplay) return;
 
+    removeMovedEvents(eventsDisplay);
     const panelState = ensureState();
     const ofeEvents = getVisibleOfeEvents(eventsDisplay);
     const rows = eventsDisplay.querySelectorAll(
@@ -168,7 +185,10 @@
     ensureState();
     state.eventsPanelInitialized = true;
     customElements.whenDefined("events-display").then(observeEventsDisplay);
-    fn.onNativeGameTick?.(observeEventsDisplay);
+    fn.onNativeGameTick?.(() => {
+      observeEventsDisplay();
+      syncEventsPanel();
+    });
     window.addEventListener("resize", syncEventsPanel);
   };
 })();

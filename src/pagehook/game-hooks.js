@@ -640,6 +640,60 @@
     });
   }
 
+  function getIncomingBombSender(game, entry) {
+    const message = String(entry?.message || "").trim();
+    let name = "Unknown player";
+    const separatorIndex = message.indexOf(" - ");
+    if (separatorIndex > 0) {
+      name = message.slice(0, separatorIndex).replaceAll("⚠️", "").trim() || name;
+    }
+
+    let owner = null;
+    try {
+      owner = game?.unit?.(Number(entry?.unitID))?.owner?.() || null;
+    } catch (_) {}
+
+    return {
+      name: fn.getPlayerDisplayName?.(owner) || name,
+      playerID: fn.resolvePlayerSmallID?.(owner),
+    };
+  }
+
+  function publishIncomingBombs(game, updates) {
+    const myPID = Number(game?.myPlayer?.()?.smallID?.());
+    if (!Number.isFinite(myPID) || myPID <= 0) return;
+    const incoming = Array.isArray(updates?.[constants.GAME_UPDATE_TYPE.UNIT_INCOMING])
+      ? updates[constants.GAME_UPDATE_TYPE.UNIT_INCOMING]
+      : [];
+    const bombs = [];
+    for (const entry of incoming) {
+      const kind =
+        entry?.messageType === constants.MESSAGE_TYPE.NUKE_INBOUND
+          ? "atom"
+          : entry?.messageType === constants.MESSAGE_TYPE.HYDROGEN_BOMB_INBOUND
+            ? "hydrogen"
+            : entry?.messageType === constants.MESSAGE_TYPE.MIRV_INBOUND
+              ? "mirv"
+              : null;
+      if (
+        !entry ||
+        Number(entry.playerID) !== myPID ||
+        !kind
+      ) {
+        continue;
+      }
+      const sender = getIncomingBombSender(game, entry);
+      bombs.push({
+        kind,
+        unitID: Number(entry.unitID),
+        senderID: sender.playerID,
+        senderName: sender.name,
+        createdAt: Date.now(),
+      });
+    }
+    if (bombs.length) fn.noteIncomingBombs?.(bombs);
+  }
+
   function getMyFocusID() {
     const game = fn.getAnyGameView?.();
     const mySmallID = Number(game?.myPlayer?.()?.smallID?.());
@@ -1055,9 +1109,6 @@
     const landedTransportPositions = [];
     const ownWarshipInactiveUnitIds = [];
     const ownWarshipInactivePositions = [];
-    const mirvInboundUnitIds = [];
-    const nukeInboundUnitIds = [];
-    const hydrogenInboundUnitIds = [];
     const groundAttackInboundCandidates = [];
 
     pruneAlertCooldownMap(state.boatInboundAlertTickByAttacker, gu.tick);
@@ -1164,13 +1215,10 @@
         }
       } else if (entry.messageType === constants.MESSAGE_TYPE.MIRV_INBOUND) {
         mirvInboundEvents += 1;
-        if (entry.unitID != null) mirvInboundUnitIds.push(Number(entry.unitID));
       } else if (entry.messageType === constants.MESSAGE_TYPE.NUKE_INBOUND) {
         nukeInboundEvents += 1;
-        if (entry.unitID != null) nukeInboundUnitIds.push(Number(entry.unitID));
       } else if (entry.messageType === constants.MESSAGE_TYPE.HYDROGEN_BOMB_INBOUND) {
         hydrogenInboundEvents += 1;
-        if (entry.unitID != null) hydrogenInboundUnitIds.push(Number(entry.unitID));
       }
     }
 
@@ -1248,19 +1296,11 @@
 
     if (mirvInboundEvents > 0 && gu.tick !== state.lastMirvInboundSoundTick) {
       state.lastMirvInboundSoundTick = gu.tick;
-      pushSoundFeedEvent("MIRV inbound", {
-        duration: 1200,
-        unitID: mirvInboundUnitIds[0],
-      });
       playMirvInboundAlarm();
     }
 
     if (nukeInboundEvents > 0 && gu.tick !== state.lastNukeInboundSoundTick) {
       state.lastNukeInboundSoundTick = gu.tick;
-      pushSoundFeedEvent("Atom bomb inbound", {
-        duration: 1200,
-        unitID: nukeInboundUnitIds[0],
-      });
       playNukeInboundAlarm();
     }
 
@@ -1269,10 +1309,6 @@
       gu.tick !== state.lastHydrogenInboundSoundTick
     ) {
       state.lastHydrogenInboundSoundTick = gu.tick;
-      pushSoundFeedEvent("Hydrogen bomb inbound", {
-        duration: 1200,
-        unitID: hydrogenInboundUnitIds[0],
-      });
       playHydrogenInboundAlarm();
     }
   }
@@ -1467,6 +1503,7 @@
     state.lastMirvInboundSoundTick = -1;
     state.lastNukeInboundSoundTick = -1;
     state.lastHydrogenInboundSoundTick = -1;
+    state.incomingBombs = [];
     state.allianceExtensionPendingById?.clear?.();
     setGamePhase("none");
   }
@@ -1489,6 +1526,7 @@
     }
 
     publishBoatLandingIndicators(game, updates);
+    publishIncomingBombs(game, updates);
     maybePlayGameSounds(game, { tick, updates });
     publishGameMarkers(game);
   }
