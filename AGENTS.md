@@ -11,7 +11,11 @@
 
 ## Build And Release
 - Use `npm run build` to produce a packaged extension zip under `dist/`.
-- Use `npm run release -- patch` to bump the version, package the extension, publish it to the Chrome Web Store, create a release commit and tag, push them, and publish a GitHub release.
-- If the repo already contains the changes you want to ship, use `npm run release:current -- patch`.
-- Validate first-time credentials with `npm run release:check`.
-- Override the release version with `npm run release -- minor`, `npm run release -- major`, or `npm run release -- 0.2.0`.
+- A release request means a GitHub release and a ZIP for manual Chrome Web Store upload.
+- Keep the manifest version above the version already published in the Chrome Web Store. Use a supplied store version or screenshot when it is newer than the repository version.
+- Use `npm run release:github -- patch` to bump the version, package the extension, create and push the release commit and tag, and publish a GitHub release.
+- To include current uncommitted changes, use `npm run release:current -- patch --github-only`.
+- Copy the resulting versioned ZIP from `dist/` to `/Users/marijn/Downloads/` and verify that the copy matches.
+- Open `https://chrome.google.com/webstore/devconsole/cd974d6b-dc07-43b2-8f07-6a499aa32fd1/gbjflnkbijadpcdomkcmbohkpbkdcilf/edit/package` in the user's default browser so Marijn can upload and publish manually.
+- Do not request Chrome Web Store API credentials or publish through its API unless explicitly asked.
+- Override the release version with `npm run release:github -- minor`, `npm run release:github -- major`, or an explicit version such as `npm run release:github -- 1.0.1`.
