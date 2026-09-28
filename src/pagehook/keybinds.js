@@ -146,6 +146,7 @@
 
   function getDefaultExtensionSettings() {
     return {
+      actionBlocked: true,
       spawnEntry: true,
       gameStart: true,
       boatLanding: true,

@@ -29,6 +29,7 @@
   let audioUnlockInitialized = false;
   let spawnEntryAlertPlayed = false;
   let lastMarkerPublishAt = -Infinity;
+  let lastActionBlockedAt = -Infinity;
 
   function writeAttribute(name, value) {
     const serialized = typeof value === "string" ? value : JSON.stringify(value);
@@ -167,6 +168,17 @@
     amp.connect(ctx.destination);
     osc.start(at);
     osc.stop(off);
+  }
+
+  function playActionBlocked(force = false) {
+    if (!force && !soundEnabled("actionBlocked")) return;
+    const now = performance.now();
+    if (!force && now - lastActionBlockedAt < 200) return;
+    lastActionBlockedAt = now;
+    try {
+      playTone({ type: "triangle", frequency: 220, sweepTo: 160, duration: 0.1, gain: 0.12, release: 0.09 });
+      playTone({ type: "triangle", frequency: 160, sweepTo: 110, start: 0.1, duration: 0.14, gain: 0.1, release: 0.13 });
+    } catch (_) {}
   }
 
   function playGameStartChime(force = false) {
@@ -608,6 +620,7 @@
 
   function getExtensionSoundPlayer(key) {
     const previews = {
+      actionBlocked: playActionBlocked,
       spawnEntry: playSpawnEntryChime,
       gameStart: playGameStartChime,
       boatLanding: playBoatLandingChime,
@@ -1523,6 +1536,23 @@
         Number(update.allianceID),
         update.playerID,
       );
+    }
+
+    const betrayals = updates[constants.GAME_UPDATE_TYPE.BROKE_ALLIANCE] || [];
+    const myID = game.myPlayer?.()?.smallID?.();
+    for (const update of betrayals) {
+      if (update.traitorID === myID) continue;
+      const traitor = game.playerBySmallID?.(update.traitorID);
+      const betrayed = game.playerBySmallID?.(update.betrayedID);
+      if (!traitor || !betrayed || betrayed.isDisconnected?.()) continue;
+      const added = fn.notePlayerBetrayal?.(traitor, {
+        betrayedName: fn.getPlayerDisplayName?.(betrayed),
+        betrayedYou: update.betrayedID === myID,
+        tick,
+      });
+      if (added && (update.betrayedID === myID || state.neighborStatusById[update.traitorID])) {
+        playNeighborTraitorAlert();
+      }
     }
 
     publishBoatLandingIndicators(game, updates);

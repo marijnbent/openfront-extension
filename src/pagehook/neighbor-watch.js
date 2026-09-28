@@ -82,13 +82,13 @@
   }
 
   function notifyNeighborChange(player, kind) {
-    if (kind === "betrayed") fn.notePlayerBetrayal?.(player);
+    if (kind === "betrayed") {
+      if (fn.notePlayerBetrayal?.(player)) fn.playExtensionSound?.("neighborTraitor");
+      return;
+    }
     const smallID = typeof player.smallID === "function" ? player.smallID() : null;
     const colored = playerNameHtml(player);
-    const description =
-      kind === "sleeping"
-        ? `${colored} is sleeping`
-        : `${colored} betrayed and is now traitor`;
+    const description = `${colored} is sleeping`;
 
     fn.pushBottomRightEvent?.({
       description,
@@ -99,9 +99,7 @@
     });
 
     if (fn.playExtensionSound) {
-      fn.playExtensionSound(
-        kind === "sleeping" ? "neighborSleeping" : "neighborTraitor",
-      );
+      fn.playExtensionSound("neighborSleeping");
     }
   }
 

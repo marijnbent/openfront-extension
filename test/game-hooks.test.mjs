@@ -32,6 +32,7 @@ function createHarness() {
       DISPLAY_EVENT: 3,
       UNIT_INCOMING: 4,
       ALLIANCE_EXTENSION: 5,
+      BROKE_ALLIANCE: 7,
     },
     MESSAGE_TYPE: {
       CHAT: 1,
@@ -93,8 +94,45 @@ function createHarness() {
   vm.runInNewContext(source, sandbox);
   fn.initGameHooks();
 
-  return { alerts, bombs, constants, game, tickListeners };
+  return { alerts, bombs, constants, game, tickListeners, fn, sandbox };
 }
+
+test("blocked action sound supports preview, mute, and a short repeat limit", () => {
+  const { fn, sandbox } = createHarness();
+  const tones = [];
+  const parameter = {
+    setValueAtTime() {},
+    exponentialRampToValueAtTime() {},
+  };
+  sandbox.window.AudioContext = class {
+    state = "running";
+    currentTime = 0;
+    createOscillator() {
+      const oscillator = {
+        frequency: parameter,
+        connect() {},
+        start() { tones.push(oscillator); },
+        stop() {},
+      };
+      return oscillator;
+    }
+    createGain() { return { gain: parameter, connect() {} }; }
+  };
+
+  assert.equal(fn.previewExtensionSound("actionBlocked"), true);
+  assert.equal(tones.length, 2);
+  sandbox.performance.now = () => 250;
+  fn.playExtensionSound("actionBlocked");
+  assert.equal(tones.length, 2);
+  fn.extensionSoundEnabled = () => true;
+  fn.playExtensionSound("actionBlocked");
+  assert.equal(tones.length, 4);
+  fn.playExtensionSound("actionBlocked");
+  assert.equal(tones.length, 4);
+  sandbox.performance.now = () => 500;
+  fn.playExtensionSound("actionBlocked");
+  assert.equal(tones.length, 6);
+});
 
 test("all incoming bomb types move to panel data when sounds are disabled", () => {
   const harness = createHarness();
@@ -131,4 +169,30 @@ test("all incoming bomb types move to panel data when sounds are disabled", () =
   assert.equal(harness.bombs[2].senderName, "EmberFox");
   assert.equal(harness.bombs[2].senderID, 23);
   assert.equal(harness.bombs[2].unitID, 93);
+});
+
+
+test("native alliance breaks reach the panel for distant players with sounds disabled", () => {
+  const { fn, game, tickListeners, constants } = createHarness();
+  const notices = [];
+  const traitor = { smallID: () => 23, displayName: () => "Distant ally" };
+  const me = { smallID: () => 7, displayName: () => "Me" };
+  const other = { smallID: () => 9, displayName: () => "Other" };
+  game.playerBySmallID = (id) => ({ 23: traitor, 7: me, 9: other })[id];
+  fn.notePlayerBetrayal = (player, details) => { notices.push({ player, details }); return true; };
+  const updates = { [constants.GAME_UPDATE_TYPE.BROKE_ALLIANCE]: [
+    { traitorID: 23, betrayedID: 7 },
+    { traitorID: 23, betrayedID: 9 },
+    { traitorID: 7, betrayedID: 9 },
+  ] };
+  tickListeners[0]({ game, tick: 20, updates });
+  assert.equal(notices.length, 2);
+  assert.equal(notices[0].player, traitor);
+  assert.equal(notices[0].details.betrayedYou, true);
+  assert.equal(notices[1].details.betrayedName, "Other");
+  other.isDisconnected = () => true;
+  tickListeners[0]({ game, tick: 30, updates: {
+    [constants.GAME_UPDATE_TYPE.BROKE_ALLIANCE]: [{ traitorID: 23, betrayedID: 9 }],
+  } });
+  assert.equal(notices.length, 2);
 });

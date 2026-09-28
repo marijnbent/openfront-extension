@@ -85,3 +85,111 @@ body > div[style*="position: fixed"][style*="left:50%"][style*="top:50%"][style*
 player-info-overlay div[translate="no"][class*="flex-1"][class*="flex-col"][class*="text-xs"][class*="font-bold"][class*="drop-shadow"] {
   display: none !important;
 }
+
+#ofe-alliance-panel {
+  overflow: hidden;
+}
+
+#ofe-alliance-panel button {
+  font-family: inherit;
+}
+
+#ofe-alliance-panel button:focus-visible,
+#ofe-alliance-panel [role="button"]:focus-visible,
+#ofe-alliance-panel-toggle:focus-visible {
+  outline: 2px solid #f8fafc;
+  outline-offset: -3px;
+}
+
+#ofe-betrayal-list {
+  max-height: 156px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  background: #241c17;
+}
+
+#ofe-betrayal-list .ofe-betrayal-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  height: 52px;
+  padding: 8px 10px;
+  box-sizing: border-box;
+  border: 0;
+  border-bottom: 1px solid #483427;
+  border-left: 3px solid #e9a55a;
+  background: transparent;
+  color: #f2bd80;
+  text-align: left;
+  cursor: pointer;
+  animation: ofe-betrayal-arrival 220ms ease-out;
+}
+
+#ofe-betrayal-list .ofe-betrayal-row[data-personal="true"] {
+  background: #331b20;
+  border-left-color: #fa8793;
+  color: #ffb4bd;
+}
+
+#ofe-betrayal-list .ofe-betrayal-row:hover {
+  background: #3d2c23;
+}
+
+.ofe-betrayal-icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 22px;
+  height: 22px;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.ofe-betrayal-copy {
+  display: grid;
+  gap: 3px;
+  flex: 1;
+  min-width: 0;
+  line-height: 1.2;
+}
+
+.ofe-betrayal-copy strong,
+.ofe-betrayal-copy > span {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.ofe-betrayal-copy strong {
+  color: #fff5e9;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.ofe-betrayal-copy > span {
+  font-size: 11px;
+}
+
+.ofe-betrayal-arrow {
+  flex: 0 0 auto;
+  font-size: 16px;
+}
+
+#ofe-alliance-panel-toggle[data-alerts="true"] {
+  border-color: #e9a55a !important;
+  color: #f2bd80 !important;
+}
+
+@keyframes ofe-betrayal-arrival {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #ofe-betrayal-list .ofe-betrayal-row {
+    animation: none;
+  }
+}

@@ -23,6 +23,7 @@
     PLAYER: 2,
     DISPLAY_EVENT: 3,
     ALLIANCE_EXTENSION: 9,
+    BROKE_ALLIANCE: 7,
     UNIT_INCOMING: 14,
   };
 
@@ -60,6 +61,10 @@
   };
 
   ns.constants.EXT_SOUND_SETTINGS = {
+    actionBlocked: {
+      label: "OFE: Action Blocked",
+      desc: "Play a short tone when an attack shortcut is blocked.",
+    },
     spawnEntry: {
       label: "OFE: Spawn Phase",
       desc: "Play a short chime when spawn phase begins.",

@@ -339,7 +339,7 @@ test("alliance panel moves below a taller game sidebar", () => {
 });
 
 
-test("neighbor betrayals appear with nukes and focus the named traitor", async () => {
+test("neighbor betrayals stay above alliances for a minute and focus the player", async () => {
   const harness = createHarness();
   await harness.tick(10);
   harness.other.isTraitor = () => true;
@@ -347,44 +347,47 @@ test("neighbor betrayals appear with nukes and focus the named traitor", async (
   harness.me.alliances = () => [];
   await harness.tick(20);
 
-  const list = findById(harness.body, "ofe-bomb-list");
+  const list = findById(harness.body, "ofe-betrayal-list");
   assert.equal(list.children.length, 1);
-  assert.equal(list.children[0].children[0].textContent, "Traitor");
-  assert.equal(list.children[0].children[1].textContent, "<Traitor & Co>");
-  assert.equal(harness.namespace.state.alliancePanelState.bombSection.style.display, "");
+  assert.equal(list.children[0].children[1].children[0].textContent, "<Traitor & Co>");
+  assert.equal(list.children[0].children[1].children[1].textContent, "Broke an alliance");
   list.children[0].click();
   assert.equal(harness.focusTargets[0].focusID, 42);
-  assert.equal(harness.activityEvents.length, 1);
+  assert.equal(harness.activityEvents.length, 0);
   assert.deepEqual(harness.sounds, ["neighborTraitor"]);
-
+  const row = list.children[0];
   await harness.tick(30);
-  assert.equal(list.children.length, 1);
-  assert.equal(harness.activityEvents.length, 1);
+  assert.equal(list.children[0], row);
   harness.namespace.fn.noteIncomingBombs([
-    { kind: "atom", unitID: 42, senderID: 90, senderName: "Bomber", createdAt: Date.now() + 1 },
+    { kind: "atom", unitID: 42, senderID: 90, senderName: "Bomber", createdAt: Date.now() },
   ]);
-  assert.equal(list.children.length, 2);
-  assert.equal(list.children[0].children[0].textContent, "Atom bomb");
-  assert.equal(list.children[1].children[0].textContent, "Traitor");
-
-  harness.advanceTime(15001);
+  assert.equal(list.children.length, 1);
+  assert.equal(findById(harness.body, "ofe-bomb-list").children.length, 1);
+  harness.advanceTime(31000);
   await harness.tick(40);
   assert.equal(list.children.length, 1);
-  assert.equal(list.children[0].children[0].textContent, "Atom bomb");
-  harness.advanceTime(16000);
+  assert.equal(findById(harness.body, "ofe-bomb-list").children.length, 0);
+  harness.advanceTime(30001);
   await harness.tick(50);
   assert.equal(list.children.length, 0);
-  assert.equal(harness.namespace.state.alliancePanelState.bombSection.style.display, "none");
+  assert.equal(list.style.display, "none");
 });
 
-test("betrayal alerts survive a missing activity feed and clear on game change", async () => {
-  const harness = createHarness();
-  delete harness.namespace.fn.pushBottomRightEvent;
-  await harness.tick(10);
-  harness.other.isTraitor = () => true;
-  await harness.tick(20);
-  const list = findById(harness.body, "ofe-bomb-list");
+test("native betrayal details survive neighbor detection and are visible on the hidden toggle", async () => {
+  const h = createHarness();
+  await h.tick(10);
+  findButton(h.body, "Hide").click();
+  h.namespace.fn.notePlayerBetrayal(h.other, { betrayedYou: true, tick: 20 });
+  h.other.isTraitor = () => true;
+  await h.tick(20);
+  const toggle = findById(h.body, "ofe-alliance-panel-toggle");
+  assert.equal(toggle.textContent, "Alliances · 1 alert");
+  toggle.click();
+  const list = findById(h.body, "ofe-betrayal-list");
   assert.equal(list.children.length, 1);
-  harness.changeGame();
+  assert.equal(list.children[0].children[1].children[1].textContent, "Betrayed you");
+  assert.equal(list.children[0]["data-personal"], "true");
+  assert.deepEqual(h.sounds, []);
+  h.changeGame();
   assert.equal(list.children.length, 0);
 });

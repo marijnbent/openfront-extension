@@ -48,7 +48,10 @@
   }
 
   fn.triggerBoatOnePercentAttack = () => {
-    if (state.boatDispatching) return;
+    if (state.boatDispatching) {
+      fn.playExtensionSound?.("actionBlocked");
+      return;
+    }
 
     const controlPanel = getControlPanel();
     const eventBus = fn.getNativeContext?.()?.eventBus;
@@ -60,6 +63,7 @@
       !applyAttackRatio(controlPanel, 0.01)
     ) {
       fn.pushBottomRightLog?.("Boat 1% is unavailable right now.");
+      fn.playExtensionSound?.("actionBlocked");
       return;
     }
 
