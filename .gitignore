@@ -3,3 +3,4 @@ dist/
 .env.release.local
 tmp/
 reference/OpenFrontIO/
+manifest.json.release-backup
