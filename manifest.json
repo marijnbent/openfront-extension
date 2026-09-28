@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "OpenFront Enhanced",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Red markers on nations during spawn selection, visible at any zoom level.",
   "permissions": [],
   "host_permissions": [
@@ -53,8 +53,12 @@
         "*://www.openfront.dev/*",
         "*://*.openfront.dev/*"
       ],
-      "js": ["src/content.js"],
-      "css": ["src/content.css"],
+      "js": [
+        "src/content.js"
+      ],
+      "css": [
+        "src/content.css"
+      ],
       "run_at": "document_start"
     }
   ],
