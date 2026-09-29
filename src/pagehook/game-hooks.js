@@ -1541,7 +1541,7 @@
     const betrayals = updates[constants.GAME_UPDATE_TYPE.BROKE_ALLIANCE] || [];
     const myID = game.myPlayer?.()?.smallID?.();
     for (const update of betrayals) {
-      if (update.traitorID === myID) continue;
+      if (update.traitorID === myID || !state.neighborStatusById[update.traitorID]) continue;
       const traitor = game.playerBySmallID?.(update.traitorID);
       const betrayed = game.playerBySmallID?.(update.betrayedID);
       if (!traitor || !betrayed || betrayed.isDisconnected?.()) continue;
@@ -1550,7 +1550,7 @@
         betrayedYou: update.betrayedID === myID,
         tick,
       });
-      if (added && (update.betrayedID === myID || state.neighborStatusById[update.traitorID])) {
+      if (added) {
         playNeighborTraitorAlert();
       }
     }

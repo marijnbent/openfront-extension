@@ -94,7 +94,7 @@ function createHarness() {
   vm.runInNewContext(source, sandbox);
   fn.initGameHooks();
 
-  return { alerts, bombs, constants, game, tickListeners, fn, sandbox };
+  return { alerts, bombs, constants, game, tickListeners, fn, sandbox, state };
 }
 
 test("blocked action sound supports preview, mute, and a short repeat limit", () => {
@@ -172,17 +172,20 @@ test("all incoming bomb types move to panel data when sounds are disabled", () =
 });
 
 
-test("native alliance breaks reach the panel for distant players with sounds disabled", () => {
-  const { fn, game, tickListeners, constants } = createHarness();
+test("native alliance breaks reach the panel only for neighbors", () => {
+  const { fn, game, tickListeners, constants, state } = createHarness();
   const notices = [];
-  const traitor = { smallID: () => 23, displayName: () => "Distant ally" };
+  const traitor = { smallID: () => 23, displayName: () => "Neighbor" };
+  const distant = { smallID: () => 24, displayName: () => "Distant ally" };
   const me = { smallID: () => 7, displayName: () => "Me" };
   const other = { smallID: () => 9, displayName: () => "Other" };
-  game.playerBySmallID = (id) => ({ 23: traitor, 7: me, 9: other })[id];
+  game.playerBySmallID = (id) => ({ 23: traitor, 24: distant, 7: me, 9: other })[id];
+  state.neighborStatusById[23] = { sleeping: false, betrayed: false };
   fn.notePlayerBetrayal = (player, details) => { notices.push({ player, details }); return true; };
   const updates = { [constants.GAME_UPDATE_TYPE.BROKE_ALLIANCE]: [
     { traitorID: 23, betrayedID: 7 },
     { traitorID: 23, betrayedID: 9 },
+    { traitorID: 24, betrayedID: 7 },
     { traitorID: 7, betrayedID: 9 },
   ] };
   tickListeners[0]({ game, tick: 20, updates });
