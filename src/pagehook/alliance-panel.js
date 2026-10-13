@@ -27,6 +27,8 @@
   const nativeRenewActions = new Map();
   const ignoredRenewals = new Map();
   const animatedBombUnitIDs = new Set();
+  const announcedRenewalCycles = new Map();
+  let renewalGeneration = 0;
 
   function readHiddenSetting() {
     try {
@@ -349,14 +351,14 @@
       }
       if (!other || (typeof other.isAlive === "function" && !other.isAlive())) continue;
 
-      const liveRow = buildLiveRow(alliance, other, nowTick, extensionWindowTicks);
       const previousRow = previousSeen.get(alliance.id);
       if (
         previousRow &&
-        Number(liveRow.expiresAt) > Number(previousRow.expiresAt)
+        Number(alliance.expiresAt) > Number(previousRow.expiresAt)
       ) {
-        clearAllianceRenewPending(liveRow.allianceId);
+        clearAllianceRenewPending(alliance.id);
       }
+      const liveRow = buildLiveRow(alliance, other, nowTick, extensionWindowTicks);
       lastSeenAlliances.set(alliance.id, {
         allianceId: liveRow.allianceId,
         recipientId: liveRow.recipientId,
@@ -406,7 +408,10 @@
       });
     }
 
-    rows.sort((a, b) => a.sortValue - b.sortValue || a.name.localeCompare(b.name));
+    rows.sort((a, b) =>
+      Number(b.canAsk) - Number(a.canAsk) ||
+      a.sortValue - b.sortValue || a.name.localeCompare(b.name),
+    );
     return rows;
   }
 
@@ -489,7 +494,7 @@
         action.disabled = true;
         action.textContent = "Pending";
         action.style.cursor = "default";
-        renderAlliancePanel();
+        renderAlliancePanel({ afterRenewal: true });
       }
     });
 
@@ -743,6 +748,49 @@
     }
   }
 
+  function flashPendingAllianceAttention(panelState) {
+    if (!panelState.pendingAttention) return;
+    const targets = new Set();
+    for (const [section, expiresAt] of panelState.pendingAttention) {
+      if (Date.now() >= expiresAt) continue;
+      targets.add(panelState.hidden
+        ? panelState.toggle
+        : section === "renewal" ? panelState.list
+          : section === "betrayal" ? panelState.betrayalList : panelState.bombSection);
+    }
+    panelState.pendingAttention.clear();
+    for (const target of targets) fn.flashAttention?.(target);
+  }
+
+  fn.flashAlliancePanel = (section) => {
+    const panelState = state.alliancePanelState;
+    if (!panelState) return;
+    panelState.pendingAttention ||= new Map();
+    panelState.pendingAttention.set(section, Date.now() + 1500);
+    renderAlliancePanel();
+  };
+
+  function announceNewRenewals(game, rows) {
+    const activeIds = new Set(rows.map((row) => row.allianceId));
+    for (const id of announcedRenewalCycles.keys()) {
+      if (!activeIds.has(id)) announcedRenewalCycles.delete(id);
+    }
+    const newRenewals = rows.filter((row) =>
+      row.canAsk && announcedRenewalCycles.get(row.allianceId) !== row.expiresAt,
+    );
+    if (!newRenewals.length) return;
+    for (const row of newRenewals) announcedRenewalCycles.set(row.allianceId, row.expiresAt);
+    const generation = renewalGeneration;
+    queueMicrotask(() => {
+      if (generation !== renewalGeneration || fn.getAnyGameView?.() !== game || game.inSpawnPhase?.()) return;
+      const currentRows = collectAllianceRows(game);
+      if (!currentRows.some((row) => row.canAsk && newRenewals.some((candidate) =>
+        candidate.allianceId === row.allianceId && candidate.expiresAt === row.expiresAt,
+      ))) return;
+      fn.playExtensionSound?.("allianceRenewal");
+    });
+  }
+
   function setAlliancePanelHidden(hidden) {
     const panelState = state.alliancePanelState;
     if (!panelState) return;
@@ -807,7 +855,7 @@
     }, INTERACTION_RELEASE_DELAY_MS);
   }
 
-  function renderAlliancePanel() {
+  function renderAlliancePanel({ afterRenewal = false } = {}) {
     const panelState = state.alliancePanelState;
     if (!panelState) return;
 
@@ -822,18 +870,24 @@
         ? game.inSpawnPhase()
         : state.gamePhase !== "playing";
 
-    const alertCount = betrayals.length + bombs.length;
+    if (!inSpawn) announceNewRenewals(game, allianceRows);
+    const renewalCount = allianceRows.filter((row) => row.canAsk).length;
+    if (!renewalCount) panelState.pendingAttention?.delete("renewal");
+    const alertCount = betrayals.length + bombs.length + renewalCount;
     panelState.toggle.textContent = alertCount
       ? `Alliances · ${alertCount} ${alertCount === 1 ? "alert" : "alerts"}`
       : "Alliances";
     panelState.toggle.setAttribute("data-alerts", String(alertCount > 0));
     updateHiddenUI(panelState.hidden, allianceRows.length > 0, inSpawn);
+    if (panelState.hidden && !inSpawn) flashPendingAllianceAttention(panelState);
     if (panelState.hidden || inSpawn) return;
 
     panelState.panel.style.display = "";
     if (
-      panelState.pointerInteractionActive ||
-      Date.now() < Number(panelState.interactionLockUntil || 0)
+      !afterRenewal && (
+        panelState.pointerInteractionActive ||
+        Date.now() < Number(panelState.interactionLockUntil || 0)
+      )
     ) {
       return;
     }
@@ -858,6 +912,7 @@
     }
 
     panelState.list.scrollTop = previousScrollTop;
+    flashPendingAllianceAttention(panelState);
   }
 
   fn.noteAllianceExtensionIntent = (recipientId, allianceId = null) => {
@@ -1082,6 +1137,9 @@
       if (tick % 5 === 0) renderAlliancePanel();
     });
     fn.onNativeGameChange?.(() => {
+      renewalGeneration++;
+      announcedRenewalCycles.clear();
+      state.alliancePanelState.pendingAttention = null;
       recentBetrayals.clear();
       nativeRenewActions.clear();
       ignoredRenewals.clear();

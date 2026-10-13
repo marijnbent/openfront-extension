@@ -173,12 +173,18 @@
   function playActionBlocked(force = false) {
     if (!force && !soundEnabled("actionBlocked")) return;
     const now = performance.now();
-    if (!force && now - lastActionBlockedAt < 200) return;
+    if (!force && now - lastActionBlockedAt < 200) return false;
     lastActionBlockedAt = now;
     try {
       playTone({ type: "triangle", frequency: 220, sweepTo: 160, duration: 0.1, gain: 0.12, release: 0.09 });
       playTone({ type: "triangle", frequency: 160, sweepTo: 110, start: 0.1, duration: 0.14, gain: 0.1, release: 0.13 });
     } catch (_) {}
+  }
+
+  function playAllianceRenewalChime(force = false) {
+    if (!force && !soundEnabled("allianceRenewal")) return;
+    playTone({ type: "sine", frequency: 660, duration: 0.18, gain: 0.06, release: 0.16 });
+    playTone({ type: "sine", frequency: 880, start: 0.18, duration: 0.28, gain: 0.06, release: 0.25 });
   }
 
   function playGameStartChime(force = false) {
@@ -620,6 +626,7 @@
 
   function getExtensionSoundPlayer(key) {
     const previews = {
+      allianceRenewal: playAllianceRenewalChime,
       actionBlocked: playActionBlocked,
       spawnEntry: playSpawnEntryChime,
       gameStart: playGameStartChime,
@@ -720,7 +727,7 @@
       duration: 700,
       focusID: getMyFocusID(),
     });
-    playSpawnEntryChime();
+    fn.playExtensionSound("spawnEntry");
   }
 
   function getWorldPositionFromTile(tileRef) {
@@ -800,10 +807,17 @@
 
   fn.playExtensionSound = (key, force = false) => {
     const preview = getExtensionSoundPlayer(key);
-    if (!preview) return false;
+    if (!preview || (!force && !soundEnabled(key))) return false;
 
     try {
-      preview(Boolean(force));
+      if (preview(Boolean(force)) === false) return false;
+      if (!force) {
+        if (key === "actionBlocked") fn.flashBlockedAction?.();
+        else if (key === "allianceRenewal") fn.flashAlliancePanel?.("renewal");
+        else if (["neighborTraitor", "nukeInbound", "hydrogenInbound", "mirvInbound"].includes(key)) {
+          fn.flashAlliancePanel?.(key === "neighborTraitor" ? "betrayal" : "bomb");
+        } else if (key !== "spawnEntry") fn.flashEventsPanel?.();
+      }
       return true;
     } catch (_) {
       return false;
@@ -999,7 +1013,7 @@
       pushSoundFeedEvent("Enemy boat inbound", {
         unitID: alertUnitID,
       });
-      playBoatInboundAlert();
+      fn.playExtensionSound("boatInbound");
     }, 0);
   }
 
@@ -1093,7 +1107,7 @@
       pushSoundFeedEvent("Ground attack inbound", {
         focusID: groundAttackFocusID,
       });
-      playGroundAttackInboundAlert();
+      fn.playExtensionSound("groundAttackInbound");
     }, 0);
   }
 
@@ -1267,7 +1281,7 @@
         x: destroyedTransportPosition && destroyedTransportPosition.x,
         y: destroyedTransportPosition && destroyedTransportPosition.y,
       });
-      playBoatDestroyedChime();
+      fn.playExtensionSound("boatDestroyed");
     }
 
     if (
@@ -1282,7 +1296,7 @@
         x: landedTransportPosition && landedTransportPosition.x,
         y: landedTransportPosition && landedTransportPosition.y,
       });
-      playBoatLandingChime();
+      fn.playExtensionSound("boatLanding");
     }
 
     if (
@@ -1304,17 +1318,17 @@
         x: destroyedWarshipPosition && destroyedWarshipPosition.x,
         y: destroyedWarshipPosition && destroyedWarshipPosition.y,
       });
-      playWarshipDestroyedChime();
+      fn.playExtensionSound("warshipDestroyed");
     }
 
     if (mirvInboundEvents > 0 && gu.tick !== state.lastMirvInboundSoundTick) {
       state.lastMirvInboundSoundTick = gu.tick;
-      playMirvInboundAlarm();
+      fn.playExtensionSound("mirvInbound");
     }
 
     if (nukeInboundEvents > 0 && gu.tick !== state.lastNukeInboundSoundTick) {
       state.lastNukeInboundSoundTick = gu.tick;
-      playNukeInboundAlarm();
+      fn.playExtensionSound("nukeInbound");
     }
 
     if (
@@ -1322,7 +1336,7 @@
       gu.tick !== state.lastHydrogenInboundSoundTick
     ) {
       state.lastHydrogenInboundSoundTick = gu.tick;
-      playHydrogenInboundAlarm();
+      fn.playExtensionSound("hydrogenInbound");
     }
   }
 
@@ -1551,7 +1565,7 @@
         tick,
       });
       if (added) {
-        playNeighborTraitorAlert();
+        fn.playExtensionSound("neighborTraitor");
       }
     }
 
@@ -1615,7 +1629,7 @@
         duration: 700,
         focusID: getMyFocusID(),
       });
-      playGameStartChime();
+      fn.playExtensionSound("gameStart");
       spawnEntryAlertPlayed = false;
     }
   });

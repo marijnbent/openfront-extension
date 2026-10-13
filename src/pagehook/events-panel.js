@@ -8,6 +8,8 @@
   const FILTER_KEY = "ofe.events.panel.hidden";
   const BUTTON_ID = "ofe-events-filter-toggle";
   const MARKER = "\u2063\u2064\u2063";
+  let pendingAttentionEvent = null;
+  let attentionExpiresAt = 0;
   const MOVED_EVENT_TYPES = new Set([
     constants.MESSAGE_TYPE.RENEW_ALLIANCE,
     constants.MESSAGE_TYPE.MIRV_INBOUND,
@@ -148,6 +150,7 @@
     );
     const unmatchedEvents = [...ofeEvents];
     let hasOfeRows = false;
+    let attentionRow = null;
 
     for (const row of rows) {
       if (!isOfeRow(row)) continue;
@@ -161,10 +164,27 @@
       const event = unmatchedEvents.splice(eventIndex, 1)[0] || null;
       row.style.display = panelState.hidden ? "none" : "";
       bindOfeRowInteraction(row, event);
+      if (event && event === pendingAttentionEvent) attentionRow = row;
     }
 
-    ensureButton(eventsDisplay, hasOfeRows);
+    const button = ensureButton(eventsDisplay, hasOfeRows);
+    if (Date.now() >= attentionExpiresAt) {
+      pendingAttentionEvent = null;
+    } else if (attentionRow) {
+      fn.flashAttention?.(panelState.hidden ? button : attentionRow.querySelector("td") || attentionRow);
+      pendingAttentionEvent = null;
+    }
   }
+
+  fn.flashEventsPanel = () => {
+    const eventsDisplay = document.querySelector("events-display");
+    if (!eventsDisplay) return;
+    const latestEvent = getVisibleOfeEvents(eventsDisplay).at(-1);
+    if (!latestEvent || latestEvent.createdAt !== eventsDisplay.game?.ticks?.()) return;
+    pendingAttentionEvent = latestEvent;
+    attentionExpiresAt = Date.now() + 1500;
+    syncEventsPanel();
+  };
 
   function observeEventsDisplay() {
     const eventsDisplay = document.querySelector("events-display");

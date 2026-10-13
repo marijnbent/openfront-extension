@@ -134,6 +134,42 @@ test("blocked action sound supports preview, mute, and a short repeat limit", ()
   assert.equal(tones.length, 6);
 });
 
+test("sound attention follows its destination and skips previews, mute, and blocked repeats", () => {
+  const { fn, sandbox } = createHarness();
+  const cues = [];
+  fn.flashAlliancePanel = (section) => cues.push(section);
+  fn.flashEventsPanel = () => cues.push("feed");
+  fn.flashBlockedAction = () => cues.push("cursor");
+  fn.extensionSoundEnabled = () => true;
+  for (const key of ["nukeInbound", "hydrogenInbound", "mirvInbound", "neighborTraitor", "allianceRenewal"]) {
+    fn.playExtensionSound(key);
+  }
+  assert.deepEqual(cues, ["bomb", "bomb", "bomb", "betrayal", "renewal"]);
+  cues.length = 0;
+  for (const key of ["gameStart", "boatLanding", "boatInbound", "boatDestroyed",
+    "groundAttackInbound", "warshipDestroyed", "neighborSleeping"]) {
+    fn.playExtensionSound(key);
+  }
+  assert.deepEqual(cues, Array(7).fill("feed"));
+  cues.length = 0;
+  fn.playExtensionSound("actionBlocked");
+  fn.playExtensionSound("actionBlocked");
+  assert.deepEqual(cues, ["cursor"]);
+  cues.length = 0;
+  fn.previewExtensionSound("nukeInbound");
+  fn.previewExtensionSound("allianceRenewal");
+  fn.previewExtensionSound("boatLanding");
+  fn.previewExtensionSound("actionBlocked");
+  fn.playExtensionSound("spawnEntry");
+  fn.extensionSoundEnabled = () => false;
+  sandbox.performance.now = () => 1000;
+  fn.playExtensionSound("neighborTraitor");
+  fn.playExtensionSound("allianceRenewal");
+  fn.playExtensionSound("boatLanding");
+  fn.playExtensionSound("actionBlocked");
+  assert.deepEqual(cues, []);
+});
+
 test("all incoming bomb types move to panel data when sounds are disabled", () => {
   const harness = createHarness();
   const updates = {

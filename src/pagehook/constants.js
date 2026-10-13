@@ -61,6 +61,10 @@
   };
 
   ns.constants.EXT_SOUND_SETTINGS = {
+    allianceRenewal: {
+      label: "OFE: Alliance Renewal",
+      desc: "Play a short chime when an alliance is ready to renew.",
+    },
     actionBlocked: {
       label: "OFE: Action Blocked",
       desc: "Play a short tone when an attack shortcut is blocked.",

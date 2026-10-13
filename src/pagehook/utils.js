@@ -6,6 +6,40 @@
 
   const { state, constants, fn } = ns;
   const OFE_EVENT_MARKER = "\u2063\u2064\u2063";
+  const attentionByElement = new WeakMap();
+  let blockedActionCue = null;
+
+  fn.flashAttention = (element, repeatDelay = 1200) => {
+    if (!element?.animate || !element.isConnected || document.visibilityState === "hidden") return false;
+    const now = Date.now();
+    const previous = attentionByElement.get(element);
+    if (previous && now - previous.at < repeatDelay) return false;
+    previous?.animation.cancel();
+    const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    const highlight = { outline: "2px solid #fbbf24", outlineOffset: "-2px", opacity: 1, filter: "none" };
+    const animation = element.animate(
+      [highlight, reducedMotion ? highlight : { ...highlight, outlineColor: "transparent" }],
+      { duration: 900, easing: "ease-out" },
+    );
+    attentionByElement.set(element, { animation, at: now });
+    return true;
+  };
+
+  fn.flashBlockedAction = () => {
+    if (!document.body) return;
+    if (!blockedActionCue?.isConnected) {
+      blockedActionCue = document.createElement("div");
+      blockedActionCue.id = "ofe-blocked-action-cue";
+      blockedActionCue.setAttribute("aria-hidden", "true");
+      blockedActionCue.style.cssText =
+        "position:fixed;z-index:10040;width:30px;height:30px;border-radius:50%;outline:0;" +
+        "pointer-events:none;transform:translate(-50%,-50%);";
+      document.body.appendChild(blockedActionCue);
+    }
+    blockedActionCue.style.left = `${state.lastMouseX}px`;
+    blockedActionCue.style.top = `${state.lastMouseY}px`;
+    fn.flashAttention(blockedActionCue, 0);
+  };
 
   fn.clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 

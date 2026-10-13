@@ -57,7 +57,7 @@ function descendants(root) {
   return [root, ...root.children.flatMap(descendants)];
 }
 
-function createHarness({ sidebarRect = null } = {}) {
+function createHarness({ sidebarRect = null, allianceExpiresAt = 1100 } = {}) {
   let now = Date.now();
   const tickListeners = [];
   const gameChangeListeners = [];
@@ -95,7 +95,7 @@ function createHarness({ sidebarRect = null } = {}) {
     },
   };
 
-  const alliance = { id: 7, other: 42, expiresAt: 1100 };
+  const alliance = { id: 7, other: 42, expiresAt: allianceExpiresAt };
   const other = {
     displayName: () => "Ally",
     smallID: () => 42,
@@ -145,7 +145,10 @@ function createHarness({ sidebarRect = null } = {}) {
       onNativeGameChange: (listener) => gameChangeListeners.push(listener),
       onNativeGameTick: (listener) => tickListeners.push(listener),
       pushBottomRightEvent: (event) => activityEvents.push(event),
-      playExtensionSound: (sound) => sounds.push(sound),
+      playExtensionSound: (sound) => {
+        sounds.push(sound);
+        if (sound === "allianceRenewal") namespace.fn.flashAlliancePanel("renewal");
+      },
       resolvePlayerSmallID: (id) => id,
     },
   };
@@ -192,6 +195,8 @@ function createHarness({ sidebarRect = null } = {}) {
     },
     changeGame: () => gameChangeListeners.forEach((listener) => listener()),
     advanceTime: (ms) => { now += ms; },
+    game,
+    alliance,
     other,
     me,
     activityEvents,
@@ -245,6 +250,167 @@ test("ignoring a renewal dismisses its controls and warning for that cycle", () 
       (element) => element.textContent === "0:10 left · ignored",
     ),
   );
+});
+
+test("renewing moves pending allies below actionable renewals immediately after each click", async () => {
+  const harness = createHarness();
+  const alliances = [
+    { id: 7, other: 42, expiresAt: 1100 },
+    { id: 8, other: 43, expiresAt: 1150 },
+    { id: 9, other: 44, expiresAt: 1200 },
+  ];
+  const renewed = [];
+  harness.me.alliances = () => alliances;
+  harness.game.player = (id) => ({ ...harness.other, displayName: () => `Ally ${id}` });
+  for (const alliance of alliances.slice(1)) {
+    harness.actionableEvents.events.push({
+      allianceID: alliance.id,
+      buttons: [{ className: "btn", action: () => renewed.push(alliance.id) }],
+    });
+  }
+  await harness.tick(1000);
+  const panel = harness.namespace.state.alliancePanelState;
+  const rowNames = () => panel.list.children.map((row) => row.title);
+  assert.deepEqual(rowNames(), ["Go to Ally 42", "Go to Ally 43", "Go to Ally 44"]);
+
+  panel.panel.listeners.get("pointerdown")();
+  findButton(panel.list.children[0], "Renew").click();
+  assert.equal(harness.renewCount(), 1);
+  assert.deepEqual(rowNames(), ["Go to Ally 43", "Go to Ally 44", "Go to Ally 42"]);
+  assert.ok(findButton(panel.list.children[2], "Pending").disabled);
+
+  findButton(panel.list.children[0], "Renew").click();
+  assert.deepEqual(renewed, [8]);
+  assert.deepEqual(rowNames(), ["Go to Ally 44", "Go to Ally 42", "Go to Ally 43"]);
+
+  panel.pointerInteractionActive = false;
+  harness.advanceTime(1000);
+  await harness.tick(1005);
+  assert.deepEqual(rowNames(), ["Go to Ally 44", "Go to Ally 42", "Go to Ally 43"]);
+  findButton(panel.list.children[0], "Renew").click();
+  assert.deepEqual(renewed, [8, 9]);
+  assert.equal(findButton(panel.list, "Renew"), undefined);
+});
+
+test("a failed renewal keeps the actionable ally in place", async () => {
+  const harness = createHarness();
+  harness.me.alliances = () => [
+    { id: 8, other: 43, expiresAt: 1050 },
+    { id: 7, other: 42, expiresAt: 1100 },
+  ];
+  harness.game.player = (id) => ({ ...harness.other, displayName: () => `Ally ${id}` });
+  harness.actionableEvents.events.push({
+    allianceID: 8,
+    buttons: [{ className: "btn", action: () => { throw new Error("Renewal failed"); } }],
+  });
+  await harness.tick(1000);
+  const list = harness.namespace.state.alliancePanelState.list;
+  const firstRow = list.children[0];
+  findButton(firstRow, "Renew").click();
+  assert.equal(list.children[0], firstRow);
+  assert.equal(firstRow.title, "Go to Ally 43");
+  assert.equal(findButton(firstRow, "Renew").disabled, false);
+  assert.equal(harness.namespace.state.allianceExtensionPendingById.has(8), false);
+});
+
+test("sound cues highlight their alert section or the hidden toggle, after interaction locks", async () => {
+  const harness = createHarness();
+  await harness.tick(1000);
+  const { fn, state } = harness.namespace;
+  const panel = state.alliancePanelState;
+  const flashes = [];
+  fn.flashAttention = (element) => flashes.push(element);
+  fn.noteIncomingBombs([{ unitID: 8, kind: "atom", createdAt: Date.now() }]);
+  fn.flashAlliancePanel("bomb");
+  assert.deepEqual(flashes, [panel.bombSection]);
+  fn.notePlayerBetrayal(harness.other);
+  fn.flashAlliancePanel("betrayal");
+  assert.equal(flashes.at(-1), panel.betrayalList);
+  findButton(harness.body, "Hide").click();
+  fn.flashAlliancePanel("bomb");
+  assert.equal(flashes.at(-1), panel.toggle);
+  panel.toggle.click();
+  flashes.length = 0;
+  panel.pointerInteractionActive = true;
+  fn.flashAlliancePanel("bomb");
+  assert.equal(flashes.length, 0);
+  panel.pointerInteractionActive = false;
+  await harness.tick(1005);
+  assert.deepEqual(flashes, [panel.bombSection]);
+  panel.pointerInteractionActive = true;
+  fn.flashAlliancePanel("bomb");
+  harness.advanceTime(1600);
+  panel.pointerInteractionActive = false;
+  await harness.tick(1010);
+  assert.equal(flashes.length, 1);
+});
+
+test("renewal alerts fire once per cycle, group simultaneous allies, and count only actionable renewals", async () => {
+  const harness = createHarness({ allianceExpiresAt: 1400 });
+  const { fn, state } = harness.namespace;
+  const panel = state.alliancePanelState;
+  const flashes = [];
+  fn.flashAttention = (target) => flashes.push(target);
+  const second = { id: 8, other: 43, expiresAt: 1400 };
+  harness.me.alliances = () => [harness.alliance, second];
+  let nowTick = 1000;
+  harness.game.ticks = () => nowTick;
+  await harness.tick(nowTick);
+  assert.deepEqual(harness.sounds, []);
+
+  nowTick = 1100;
+  await harness.tick(nowTick);
+  assert.deepEqual(harness.sounds, ["allianceRenewal"]);
+  assert.deepEqual(flashes, [panel.list]);
+  assert.equal(panel.toggle.textContent, "Alliances · 2 alerts");
+  await harness.tick(1105);
+  assert.equal(harness.sounds.length, 1);
+  findButton(panel.list.children[0], "Renew").click();
+  assert.equal(panel.toggle.textContent, "Alliances · 1 alert");
+  findButton(panel.list.children[0], "Ignore").click();
+  assert.equal(panel.toggle.textContent, "Alliances");
+  await harness.tick(1110);
+  assert.equal(harness.sounds.length, 1);
+
+  findButton(harness.body, "Hide").click();
+  harness.alliance.expiresAt = 2000;
+  second.expiresAt = 2000;
+  nowTick = 1700;
+  await harness.tick(nowTick);
+  assert.equal(harness.sounds.length, 2);
+  assert.equal(flashes.at(-1), panel.toggle);
+  assert.equal(panel.toggle.textContent, "Alliances · 2 alerts");
+  assert.equal(state.allianceExtensionPendingById.size, 0);
+});
+
+test("renewal cues survive interaction locks alongside incoming bomb cues", async () => {
+  const harness = createHarness({ allianceExpiresAt: 1400 });
+  const { fn, state } = harness.namespace;
+  const panel = state.alliancePanelState;
+  const flashes = [];
+  fn.flashAttention = (target) => flashes.push(target);
+  panel.pointerInteractionActive = true;
+  harness.game.ticks = () => 1100;
+  await harness.tick(1100);
+  fn.flashAlliancePanel("bomb");
+  assert.deepEqual(flashes, []);
+  panel.pointerInteractionActive = false;
+  await harness.tick(1105);
+  assert.deepEqual(flashes, [panel.list, panel.bombSection]);
+  await harness.tick(1110);
+  assert.equal(flashes.length, 2);
+});
+
+test("ignored and obsolete queued renewal alerts do not play", async () => {
+  const ignored = createHarness();
+  findButton(ignored.body, "Ignore").click();
+  await ignored.tick(1000);
+  assert.deepEqual(ignored.sounds, []);
+
+  const changed = createHarness();
+  changed.changeGame();
+  await changed.tick(1000);
+  assert.deepEqual(changed.sounds, ["allianceRenewal"]);
 });
 
 test("alliance panel keeps native alliance requests in activity", () => {
@@ -354,7 +520,7 @@ test("neighbor betrayals stay above alliances for a minute and focus the player"
   list.children[0].click();
   assert.equal(harness.focusTargets[0].focusID, 42);
   assert.equal(harness.activityEvents.length, 0);
-  assert.deepEqual(harness.sounds, ["neighborTraitor"]);
+  assert.deepEqual(harness.sounds, ["allianceRenewal", "neighborTraitor"]);
   const row = list.children[0];
   await harness.tick(30);
   assert.equal(list.children[0], row);
@@ -381,13 +547,13 @@ test("native betrayal details survive neighbor detection and are visible on the 
   h.other.isTraitor = () => true;
   await h.tick(20);
   const toggle = findById(h.body, "ofe-alliance-panel-toggle");
-  assert.equal(toggle.textContent, "Alliances · 1 alert");
+  assert.equal(toggle.textContent, "Alliances · 2 alerts");
   toggle.click();
   const list = findById(h.body, "ofe-betrayal-list");
   assert.equal(list.children.length, 1);
   assert.equal(list.children[0].children[1].children[1].textContent, "Betrayed you");
   assert.equal(list.children[0]["data-personal"], "true");
-  assert.deepEqual(h.sounds, []);
+  assert.deepEqual(h.sounds, ["allianceRenewal"]);
   h.changeGame();
   assert.equal(list.children.length, 0);
 });

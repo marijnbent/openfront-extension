@@ -24,6 +24,11 @@
   let gameDataObserver = null;
   let markerExpiryTimer = null;
   const markerById = new Map();
+  const markerDataCache = new Map();
+  let buildingStackData = null;
+  let sortedBuildingStacks = [];
+  const BUILDING_STACK_LIMIT = 24;
+  const BUILDING_STACK_SPACING = 64;
   const MARKER_SIZE = 24;
   const MARKER_TARGET_SCREEN_SIZE = 24;
   const MARKER_MIN_SCALE = 0.03;
@@ -76,7 +81,11 @@
   function readMarkerData(attributeName) {
     try {
       const raw = document.documentElement.getAttribute(attributeName);
-      return raw ? JSON.parse(raw) : {};
+      const cached = markerDataCache.get(attributeName);
+      if (cached?.raw === raw) return cached.value;
+      const value = raw ? JSON.parse(raw) : {};
+      markerDataCache.set(attributeName, { raw, value });
+      return value;
     } catch {
       return {};
     }
@@ -87,7 +96,41 @@
   }
 
   function getBuildingStackPositions() {
-    return readMarkerData("data-ofe-building-stacks");
+    const stacks = readMarkerData("data-ofe-building-stacks");
+    if (stacks !== buildingStackData) {
+      buildingStackData = stacks;
+      sortedBuildingStacks = Object.entries(stacks)
+        .filter(([, pos]) =>
+          pos && Number.isFinite(pos.x) && Number.isFinite(pos.y) && Number.isFinite(pos.level),
+        )
+        .sort((a, b) => b[1].level - a[1].level);
+    }
+    return sortedBuildingStacks;
+  }
+
+  function selectBuildingStacks(stacks, mapTransform) {
+    const selected = [];
+    const scale = Number(mapTransform.scale);
+    const offsetX = Number(mapTransform.x) + window.innerWidth / 2;
+    const offsetY = Number(mapTransform.y) + window.innerHeight / 2;
+    const hasViewport =
+      Number.isFinite(scale) && scale > 0 &&
+      Number.isFinite(offsetX) && Number.isFinite(offsetY);
+    for (const [id, pos] of stacks) {
+      const x = hasViewport ? pos.x * scale + offsetX : pos.x;
+      const y = hasViewport ? pos.y * scale + offsetY : pos.y;
+      if (
+        hasViewport && (x < -MARKER_SIZE || y < -MARKER_SIZE ||
+          x > window.innerWidth + MARKER_SIZE || y > window.innerHeight + MARKER_SIZE)
+      ) continue;
+      if (selected.some((entry) =>
+        Math.abs(entry.x - x) < BUILDING_STACK_SPACING &&
+        Math.abs(entry.y - y) < BUILDING_STACK_SPACING,
+      )) continue;
+      selected.push({ id, pos, x, y });
+      if (selected.length === BUILDING_STACK_LIMIT) break;
+    }
+    return selected;
   }
 
   function getTransportShipPositions() {
@@ -254,6 +297,9 @@
 
   function clearMarkers() {
     markerById.clear();
+    markerDataCache.clear();
+    buildingStackData = null;
+    sortedBuildingStacks = [];
     if (markerExpiryTimer) {
       clearTimeout(markerExpiryTimer);
       markerExpiryTimer = null;
@@ -302,7 +348,7 @@
         : NATION_MARKER_SVG_DATA_URI;
     const shadow =
       kind === "building-stack"
-        ? "drop-shadow(0 0 7px rgba(245,158,11,0.82)) drop-shadow(0 1px 2px rgba(0,0,0,0.72))"
+        ? "none"
         : "drop-shadow(0 0 6px rgba(239,68,68,0.55))";
 
     marker.style.cssText =
@@ -417,12 +463,7 @@
       usedDots.add(markerId);
     }
 
-    for (const id in buildingStacks) {
-      const pos = buildingStacks[id];
-      if (!pos || !Number.isFinite(pos.x) || !Number.isFinite(pos.y)) {
-        continue;
-      }
-
+    for (const { id, pos } of selectBuildingStacks(buildingStacks, mapTransform)) {
       const markerId = `ofe-building-stack-${id}`;
       const marker = getOrCreateMarker(markerId, "building-stack");
       setBuildingStackLabel(marker, pos.level);
@@ -570,6 +611,10 @@
   function init() {
     if (watchInterval) return;
     initGameDataObserver();
+    window.addEventListener("resize", () => {
+      updateMarkers();
+      updateMarkerScale();
+    });
     watchInterval = setInterval(() => {
       syncMarkerState();
       if (markersActive) {
