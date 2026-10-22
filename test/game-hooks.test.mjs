@@ -132,6 +132,11 @@ test("blocked action sound supports preview, mute, and a short repeat limit", ()
   sandbox.performance.now = () => 500;
   fn.playExtensionSound("actionBlocked");
   assert.equal(tones.length, 6);
+  assert.equal(fn.previewExtensionSound("defensePaint"), true);
+  assert.equal(tones.length, 7);
+  fn.extensionSoundEnabled = () => false;
+  assert.equal(fn.playExtensionSound("defensePaint"), false);
+  assert.equal(tones.length, 7);
 });
 
 test("sound attention follows its destination and skips previews, mute, and blocked repeats", () => {
@@ -161,6 +166,7 @@ test("sound attention follows its destination and skips previews, mute, and bloc
   fn.previewExtensionSound("boatLanding");
   fn.previewExtensionSound("actionBlocked");
   fn.playExtensionSound("spawnEntry");
+  fn.playExtensionSound("defensePaint");
   fn.extensionSoundEnabled = () => false;
   sandbox.performance.now = () => 1000;
   fn.playExtensionSound("neighborTraitor");

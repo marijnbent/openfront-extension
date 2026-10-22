@@ -626,6 +626,10 @@
 
   function getExtensionSoundPlayer(key) {
     const previews = {
+      defensePaint: () => playTone({
+        type: "triangle", frequency: 1200, sweepTo: 800,
+        duration: 0.035, gain: 0.035, attack: 0.002, release: 0.035,
+      }),
       allianceRenewal: playAllianceRenewalChime,
       actionBlocked: playActionBlocked,
       spawnEntry: playSpawnEntryChime,
@@ -816,7 +820,7 @@
         else if (key === "allianceRenewal") fn.flashAlliancePanel?.("renewal");
         else if (["neighborTraitor", "nukeInbound", "hydrogenInbound", "mirvInbound"].includes(key)) {
           fn.flashAlliancePanel?.(key === "neighborTraitor" ? "betrayal" : "bomb");
-        } else if (key !== "spawnEntry") fn.flashEventsPanel?.();
+        } else if (key !== "spawnEntry" && key !== "defensePaint") fn.flashEventsPanel?.();
       }
       return true;
     } catch (_) {

@@ -146,6 +146,7 @@
 
   function getDefaultExtensionSettings() {
     return {
+      defensePaint: true,
       actionBlocked: true,
       spawnEntry: true,
       gameStart: true,

@@ -29,6 +29,7 @@
         "src/pagehook/territories.js",
         "src/pagehook/build-multiplier.js",
         "src/pagehook/keybinds.js",
+        "src/pagehook/defense-paint.js",
         "src/pagehook/settings-ui.js",
         "src/pagehook/shortcut-panel.js",
         "src/pagehook/alliance-panel.js",

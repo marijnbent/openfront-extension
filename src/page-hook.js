@@ -15,6 +15,7 @@
   ns.fn.initNativeRuntime?.();
   ns.fn.initBuildMultiplier?.();
   ns.fn.initPointerTracking?.();
+  ns.fn.initDefensePaint?.();
   ns.fn.initGameHooks?.();
   ns.fn.initNeighborWatch?.();
   ns.fn.initShortcutHandlers?.();

@@ -138,9 +138,9 @@
 
     const multiplier = fn.getBuildMultiplier ? fn.getBuildMultiplier() : 1;
     const multiplierColor =
-      multiplier === 10 ? "#fca5a5" : multiplier === 5 ? "#fde68a" : "#94a3b8";
+      multiplier >= 10 ? "#fca5a5" : multiplier === 5 ? "#fde68a" : "#94a3b8";
     const multiplierBorder =
-      multiplier === 10
+      multiplier >= 10
         ? "rgba(248,113,113,0.7)"
         : multiplier === 5
           ? "rgba(245,158,11,0.65)"
@@ -148,7 +148,7 @@
 
     const multiplierRow = document.createElement("button");
     multiplierRow.type = "button";
-    multiplierRow.title = "Toggle build amount ×1, ×5, or ×10";
+    multiplierRow.title = "Toggle build amount ×1, ×5, ×10, or ×100";
     multiplierRow.setAttribute("aria-label", `Build multiplier ×${multiplier}`);
     multiplierRow.style.cssText =
       "display:flex;align-items:center;gap:4px;width:100%;" +
@@ -171,8 +171,10 @@
     multiplierRow.appendChild(multiplierName);
     multiplierRow.addEventListener("click", () => fn.toggleBuildMultiplier?.());
     statusEl.appendChild(multiplierRow);
+    fn.renderDefensePaintButton?.(statusEl, true);
 
     for (const meta of Object.values(constants.EXT_SHORTCUTS)) {
+      if (meta.action === "defensePaint") continue;
       const diag = diagnostics.byAction[meta.action];
       if (!diag) continue;
 

@@ -21,12 +21,19 @@ Chrome extension that adds quality-of-life improvements to [openfront.io](https:
 ### Mini territories
 - **Show Minis** — The shortcut marks every disconnected mini territory of 40 tiles or fewer for three seconds.
 
+### Defense paint
+
+Press `V` or click the tower icon beside the build multiplier, then move the cursor over your territory to place new defense posts. The icon has a blue tint when off and a green background when on. Press `V` again or `Escape` to stop. Set the interval in **Settings → Extension** (80 ms by default, adjustable from 20–2000 ms). Each confirmed placement plays a quiet tick, which can be muted in Extension sound settings.
+
+Painting respects native placement and gold requirements, skips existing upgrade targets, and waits for each placement to be confirmed. It pauses over menus or while dragging and switches off when you type, select another building, pause, leave the game, or switch away from the tab. The build multiplier does not affect painting.
+
 ### Keyboard shortcuts
 
 All shortcuts are rebindable in the extension's `Extension` settings tab.
 
 | Default key | Action | Description |
 |---|---|---|
+| `V` | Defense Paint | Toggles repeated placement of new defense posts under the cursor |
 | `Z` | Chat Search | Opens chat directed at the hovered player with search |
 | `X` | Emoji Search | Opens emoji selector with keyword search |
 | `N` | Boat 1% | Sends a boat attack using only 1% of your troops |
@@ -47,7 +54,7 @@ Notifications appear in the bottom-right when a neighboring player:
 2. Open `chrome://extensions` in Chrome
 3. Enable **Developer mode** (toggle in the top-right corner)
 4. Click **Load unpacked**
-5. Select the `extension/` directory
+5. Run `npm run build` and select the `dist/unpacked/` directory
 
 The extension will activate automatically when you visit `openfront.io`, `openfront.dev`, or any `*.openfront.dev` subdomain.
 

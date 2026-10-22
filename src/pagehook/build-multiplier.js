@@ -5,8 +5,9 @@
   if (!ns) return;
 
   const { state, fn } = ns;
-  const MULTIPLIERS = [1, 5, 10];
+  const MULTIPLIERS = [1, 5, 10, 100];
   const INDICATOR_STYLE_ID = "ofe-build-multiplier-styles";
+  const hookedEventBuses = new WeakSet();
 
   function installIndicatorStyles() {
     if (!document.head || document.getElementById(INDICATOR_STYLE_ID)) return;
@@ -40,7 +41,8 @@
         box-shadow: 0 0 8px rgba(245, 158, 11, 0.45);
       }
 
-      .ofe-build-multiplier-bar[data-ofe-build-multiplier="×10"]::after {
+      .ofe-build-multiplier-bar[data-ofe-build-multiplier="×10"]::after,
+      .ofe-build-multiplier-bar[data-ofe-build-multiplier="×100"]::after {
         border-color: rgba(248, 113, 113, 0.98);
         background: rgba(127, 29, 29, 0.82);
         color: #fef2f2;
@@ -61,13 +63,16 @@
 
     buildBar.classList.add("ofe-build-multiplier-bar");
     buildBar.dataset.ofeBuildMultiplier = `×${state.buildMultiplier}`;
+    fn.renderDefensePaintButton?.(buildBar);
 
     if (!buildBar.__ofeBuildMultiplierClickInstalled) {
       buildBar.__ofeBuildMultiplierClickInstalled = true;
       buildBar.addEventListener("click", (event) => {
         if (event.target !== buildBar) return;
 
-        const lastBuildButton = buildBar.lastElementChild;
+        const lastBuildButton = Array.from(buildBar.children).filter(
+          (child) => !child.hasAttribute("data-ofe-defense-paint"),
+        ).at(-1);
         if (
           lastBuildButton &&
           event.clientX <= lastBuildButton.getBoundingClientRect().right
@@ -89,7 +94,39 @@
     return buildMenu && buildMenu.uiState ? buildMenu.uiState : null;
   }
 
+  function installBatchDispatch() {
+    const eventBus = fn.getNativeContext?.()?.eventBus;
+    if (
+      !eventBus ||
+      typeof eventBus.emit !== "function" ||
+      hookedEventBuses.has(eventBus)
+    ) return;
+
+    const nativeEmit = eventBus.emit;
+    eventBus.emit = function (event, ...args) {
+      const isUpgrade =
+        Number.isInteger(event?.unitId) && typeof event?.unitType === "string";
+      const isAtomBomb = event?.unit === "Atom Bomb" && Number.isInteger(event?.tile);
+      if (
+        state.buildMultiplier !== 100 ||
+        event?.amount !== 10 ||
+        (!isUpgrade && !isAtomBomb)
+      ) {
+        return nativeEmit.call(this, event, ...args);
+      }
+
+      for (let batch = 0; batch < 10; batch++) {
+        const batchEvent = Object.assign(
+          Object.create(Object.getPrototypeOf(event)), event,
+        );
+        nativeEmit.call(this, batchEvent, ...args);
+      }
+    };
+    hookedEventBuses.add(eventBus);
+  }
+
   function installMultiplierLock() {
+    installBatchDispatch();
     const uiState = getUiState();
     if (!uiState || uiState === state.buildMultiplierUiState) return;
 
@@ -97,7 +134,7 @@
     Object.defineProperty(uiState, "upgradeMultiplier", {
       configurable: true,
       enumerable: true,
-      get: () => state.buildMultiplier,
+      get: () => Math.min(state.buildMultiplier, 10),
       // OpenFront writes here when a build hotkey is pressed twice. The
       // extension owns the value so repeated build hotkeys no longer change it.
       set: () => {},
@@ -136,6 +173,7 @@
   }
 
   fn.getBuildMultiplier = () => state.buildMultiplier;
+  fn.renderBuildControls = renderBuildMultiplier;
   fn.setBuildMultiplier = setBuildMultiplier;
   fn.toggleBuildMultiplier = toggleBuildMultiplier;
 

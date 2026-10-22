@@ -95,6 +95,10 @@
         e.preventDefault();
 
         switch (action) {
+          case "defensePaint": {
+            fn.toggleDefensePaint?.();
+            break;
+          }
           case "showMiniTerritories": {
             if (fn.triggerShowMiniTerritories) fn.triggerShowMiniTerritories();
             break;

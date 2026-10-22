@@ -303,6 +303,27 @@
       "text-aquarius text-xl font-bold mt-2 mb-3 border-b border-white/10 pb-2";
 
     root.appendChild(heading);
+    if (fn.getDefensePaintInterval) {
+      const row = document.createElement("label");
+      row.style.cssText = "display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 0;";
+      const label = document.createElement("span");
+      label.textContent = "Defense paint interval (ms)";
+      const input = document.createElement("input");
+      input.type = "number";
+      input.min = "20";
+      input.max = "2000";
+      input.step = "1";
+      input.value = String(fn.getDefensePaintInterval());
+      input.setAttribute("data-ofe-defense-interval", "");
+      input.style.cssText = "width:90px;padding:6px;border:1px solid #475569;border-radius:6px;background:#0f172a;color:#fff;";
+      input.addEventListener("change", () => {
+        fn.setDefensePaintInterval(input.valueAsNumber);
+        input.value = String(fn.getDefensePaintInterval());
+      });
+      row.appendChild(label);
+      row.appendChild(input);
+      root.appendChild(row);
+    }
     root.appendChild(soundHeading);
 
     for (const [key, meta] of Object.entries(constants.EXT_SOUND_SETTINGS)) {

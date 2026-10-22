@@ -22,12 +22,20 @@
     UNIT: 1,
     PLAYER: 2,
     DISPLAY_EVENT: 3,
+    WIN: 12,
+    GAME_PAUSED: 22,
     ALLIANCE_EXTENSION: 9,
     BROKE_ALLIANCE: 7,
     UNIT_INCOMING: 14,
   };
 
   ns.constants.EXT_SHORTCUTS = {
+    defensePaint: {
+      action: "defensePaint",
+      label: "Defense Paint",
+      desc: "Toggle new defense posts under the cursor. Escape stops painting.",
+      defaultCode: "KeyV",
+    },
     chatSearch: {
       action: "chatSearch",
       label: "Chat Search",
@@ -61,6 +69,10 @@
   };
 
   ns.constants.EXT_SOUND_SETTINGS = {
+    defensePaint: {
+      label: "OFE: Defense Paint",
+      desc: "Play a quiet tick when a painted defense post is placed.",
+    },
     allianceRenewal: {
       label: "OFE: Alliance Renewal",
       desc: "Play a short chime when an alliance is ready to renew.",
